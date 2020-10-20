@@ -1,0 +1,51 @@
+{
+  "name": "@orbs-network/pos-analytics-lib",
+  "version": "0.1.0",
+  "description": "Web based PoS analytics",
+  "author": "Noam Berg <noam.berg@gmail.com>",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "!dist/**/*.test.js"
+  ],
+  "engines": {
+    "node": ">=12.13.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/orbs-network/pos-analytics-lib.git"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "lint2": "eslint . --ext .ts,.tsx -f codeframe",
+    "clean": "rimraf ./dist/",
+    "prebuild": "npm run clean",
+    "build": "tsc --skipLibCheck -p ./tsconfig.prod.json",
+    "prepare": "npm run build",
+    "pretest": "npm run clean && tsc --skipLibCheck",
+    "test": "node --async-stack-traces ./dist/trial.test.js",
+    "release": "release-it"
+  },
+  "devDependencies": {
+    "@types/lodash": "^4.14.149",
+    "@types/node": "^12.12.32",
+    "@types/node-fetch": "^2.5.5",
+    "@typescript-eslint/eslint-plugin": "^2.25.0",
+    "@typescript-eslint/parser": "^2.25.0",
+    "eslint": "^6.8.0",
+    "eslint-config-prettier": "^6.10.1",
+    "release-it": "^14.1.0",
+    "rimraf": "^3.0.2",
+    "ts-node": "^8.8.1",
+    "typescript": "~3.7.5"
+  },
+  "dependencies": {
+    "bignumber.js": "^9.0.0",
+    "lodash": "^4.17.15",
+    "node-fetch": "^2.6.1",
+    "ts-retry-promise": "^0.5.0",
+    "web3": "^1.2.11"
+  }
+}
