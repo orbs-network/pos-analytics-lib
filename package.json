@@ -17,6 +17,9 @@
     "type": "git",
     "url": "git+https://github.com/orbs-network/pos-analytics-lib.git"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit --skipLibCheck",
     "lint2": "eslint . --ext .ts,.tsx -f codeframe",
