@@ -27,7 +27,7 @@ async function x() {
     fs.writeFileSync(gsfilepath, toConsole(guardians));
     //console.log(toConsole(guardians));
 
-    const guardianInfo = await getGuardian('0xf7ae622c77d0580f02bcb2f92380d61e3f6e466c', ethereumEndpoint);//'0x628e8c4d1611ed5b748f59f5ce694809af2f91d4', web3);
+    const guardianInfo = await getGuardian('0xf7ae622c77d0580f02bcb2f92380d61e3f6e466c', ethereumEndpoint);
     const gfilepath = path.resolve(__dirname, `../data/guardian.json`);   
     fs.writeFileSync(gfilepath, toConsole(guardianInfo));
     //console.log(toConsole(guardianInfo));

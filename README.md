@@ -1,42 +1,51 @@
-# Status Page V2
+# ORBS PoS analytics lib
 
-Web based status page for Orbs Network (for V2).
+Library to use to extract PoS data of the Orbs Network (for V2).
 
-## Dev environment
+## Functions
 
-* Make sure [Node.js](https://nodejs.org/) is installed (min 12.14.0).
+* getDelegator
 
-  * Install with `brew install node`, check version with `node -v`.
+Used to query information about delegator's stake, previous actions and rewards. Funciton's input is the requested delegator's address and an Ethereum endpoint (for example infura link with apikey).
 
-* [VSCode](https://code.visualstudio.com/) is recommended as IDE.
+```
+const delegatorInfo = await getDelegator(
+  '0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA',
+  ethereumEndpoint
+);
+```  
 
-  * Recommended extensions [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint), [Prettier - code Formatter](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode).
+* getGuardians
 
-* Run in terminal in root project directory:
+Used to query the list of all current Guardians and their names and weights. Function's input is a list of ORBS node management status URLs.
 
-  ```
-  npm install
-  ```
+```
+const guardians = await getGuardians(nodeEndpoints);
+```
 
-* Run server in developer mode (rebuilds and restarts server on every file change):
+* getGuardian
 
-  ```
-  npm run dev
-  ```
+Used to query a guardian's staking and delegator history, rewards history and list all current delegators. Function's input is the requested guardian's address and an Ethereum endpoint (for example infura link with apikey).
+```
+const guardianInfo = await getGuardian(
+  '0xf7ae622c77d0580f02bcb2f92380d61e3f6e466c',
+  ethereumEndpoint
+);
+```
 
-## Build
+* getOverview
 
-* Run in terminal in root project directory:
+Used to get an overview of the ORBS network nodes (guardians) stakes and weight history. Function's input is a list of ORBS node management status URLs and an Ethereum endpoint.
 
-  ```
-  npm run build
-  ```
+```
+const overview = await getOverview(nodeEndpoints, ethereumEndpoint);
+```
 
-* Built code will be inside `./dist`.
+## Inputs
 
-  * Run it with: 
-  
-  ```
-  npm start
-  open http://localhost/json
-  ```
+* Address - Ethereum address of delegator or guardian to test
+* EthereumEndpoit - Ethereum url for web3 http provider such as Infura (i.e: https://mainnet.infura.io/v3/<YOUR-INFURA-KEY>)
+* NodesEndpoint - a list of one or more ORBS node management status URLs (i.e: http://54.168.36.177/services/management-service/status), these will be queries in order and first one that answers is the one used.
+
+## Outputs
+Please have a look at the [model.ts](src/model.ts) for the full output definisions. 
