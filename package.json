@@ -28,7 +28,7 @@
     "build": "tsc --skipLibCheck -p ./tsconfig.prod.json",
     "prepare": "npm run build",
     "pretest": "npm run clean && tsc --skipLibCheck",
-    "test": "node --async-stack-traces ./dist/trial.test.js",
+    "test": "node -r esm --async-stack-traces ./dist/trial.test.js",
     "release": "release-it"
   },
   "devDependencies": {
@@ -40,6 +40,7 @@
     "dotenv": "^8.2.0",
     "eslint": "^6.8.0",
     "eslint-config-prettier": "^6.10.1",
+    "esm": "^3.2.25",
     "release-it": "^14.1.0",
     "rimraf": "^3.0.2",
     "ts-node": "^8.8.1",
