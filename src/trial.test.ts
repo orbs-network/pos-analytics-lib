@@ -1,16 +1,18 @@
 import _ from 'lodash';
 import fs from 'fs';
 import path from 'path';
+import dotenv from 'dotenv';
 
 import { getDelegator } from './delegator';
 import { getGuardian, getGuardians } from './guardian';
 import { getOverview } from './overview';
+dotenv.config();
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function toConsole(x:any){ return JSON.stringify(x, null, 2)}
 
 async function x() {
-    const ethereumEndpoint = 'https://mainnet.infura.io/v3/9679dc4f2d724f7997547f05f769d74e';
+    const ethereumEndpoint = String(process.env.ETHEREUM_ENDPOINT);
     const nodeEndpoints = [
         'http://54.168.36.177/services/management-service/status',
         'http://52.20.37.155/services/management-service/status',
@@ -38,4 +40,4 @@ async function x() {
     // console.log(toConsole(overview));
 }
 
-x().then(()=> process.exit(0)).catch(e => console.log(`eee ${e}, ${e.stack}`));
+x().then(()=> process.exit(0)).catch(e => console.log(`${e}`));

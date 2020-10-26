@@ -99,7 +99,7 @@ export async function readEvents(filter: (string | undefined)[], contract:any, w
             if (pace <= 10) {
                 throw new Error('looking for events slowed down to 10 - fail')
             }
-            if (typeof endBlock === 'string') {9
+            if (typeof endBlock === 'string') {
                 const block = await getCurrentBlockInfo(web3);
                 endBlock = block.number;
             }
@@ -162,4 +162,8 @@ export function ascendingEvents(e1:any, e2:any) {
         return e1.transactionIndex - e2.transactionIndex
     }
     return e1.logIndex - e2.logIndex;
+}
+
+export function generateTxLink(txHash: string): string {
+    return `https://etherscan.io/tx/${txHash}`;
 }

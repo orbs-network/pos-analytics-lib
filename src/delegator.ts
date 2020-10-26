@@ -9,7 +9,7 @@
 import _ from 'lodash';
 import BigNumber from "bignumber.js";
 import { bigToNumber } from './helpers';
-import { addressToTopic, ascendingEvents, Contracts, getBlockEstimatedTime, getWeb3, readBalanceOf, readContractEvents, Topics } from "./eth-helpers";
+import { addressToTopic, ascendingEvents, Contracts, generateTxLink, getBlockEstimatedTime, getWeb3, readBalanceOf, readContractEvents, Topics } from "./eth-helpers";
 import { Delegator, DelegatorAction, DelegatorReward, DelegatorStake } from "./model";
 
 export async function getDelegator(address: string, etherumEndpoint: string): Promise<Delegator> {
@@ -81,6 +81,8 @@ async function getStakeActions(address:string, web3:any) {
             block_time: blockTime,
             tx_hash: event.transactionHash,
             amount: bigToNumber(amount),
+            currentStake: bigToNumber(totalStake),
+            additionalInfoLink: generateTxLink(event.transactionHash),
         });
         stakes.push({
             block_number: event.blockNumber,
@@ -111,6 +113,7 @@ async function getDelegateActions(address:string, web3:any) {
             block_number: event.blockNumber,
             tx_hash: event.transactionHash,
             to: String(event.returnValues.to).toLowerCase(),
+            additionalInfoLink: generateTxLink(event.transactionHash),
         });
     }
 

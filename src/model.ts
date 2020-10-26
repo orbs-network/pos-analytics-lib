@@ -72,6 +72,7 @@ export interface GuardianDelegator {
     last_change_time: number;
     address: string;
     stake: number;
+    balance: number;
 }
 
 export interface Delegator {
@@ -106,5 +107,7 @@ export interface DelegatorAction {
     block_time: number;
     tx_hash: string;
     amount?: number;
+    currentStake?: number;
     to?: string;
+    additionalInfoLink?: string;
 }

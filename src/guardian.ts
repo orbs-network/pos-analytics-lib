@@ -13,7 +13,8 @@ import { getWeb3, Contracts, getBlockEstimatedTime, readContractEvents, addressT
 import { Guardian, GuardianInfo, GuardianDelegator, GuardianReward, GuardianStake } from './model';
 
 export async function getGuardians(networkNodeUrls: string[]): Promise<Guardian[]> {
-     for(const url of networkNodeUrls) {
+    let fullError = ''; 
+    for(const url of networkNodeUrls) {
         try {
             const rawData = await fetchJson(url);
             return _.map(rawData.Payload.Guardians, (guardian) => {
@@ -25,11 +26,11 @@ export async function getGuardians(networkNodeUrls: string[]): Promise<Guardian[
                 }
             });
         } catch (e) {
-            //console.log(`Warning: access to URL ${url} failed, trying another. Error: ${e} `)
+            fullError += `Warning: access to URL ${url} failed, trying another. Error: ${e}\n`;
         }
     }
 
-    throw new Error(`Error while creating list of Guardians, all Netowrk Node URL failed to respond.`)
+    throw new Error(`Error while creating list of Guardians, all Netowrk Node URL failed to respond. ${fullError}`);
 }
 
 export async function getGuardian(address: string, ethereumEndpoint: string): Promise<GuardianInfo> {
@@ -67,6 +68,7 @@ async function getStakeChanges(address: string, web3:any) {
                 last_change_time: 0,
                 address: delegatorAddress,
                 stake: bigToNumber(new BigNumber(event.returnValues.delegatorContributedStake)),
+                balance: 0,
             }
             delegatorMap[delegatorAddress] = d;
         }
