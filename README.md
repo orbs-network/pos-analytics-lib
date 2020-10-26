@@ -2,7 +2,14 @@
 
 Library to use to extract PoS data of the Orbs Network (for V2).
 
-## Functions
+## Users
+
+### Install
+```
+npm i @orbs-network/pos-analytics-lib
+```
+
+### Functions
 
 * getDelegator
 
@@ -41,11 +48,41 @@ Used to get an overview of the ORBS network nodes (guardians) stakes and weight 
 const overview = await getOverview(nodeEndpoints, ethereumEndpoint);
 ```
 
-## Inputs
+### Inputs
 
 * Address - Ethereum address of delegator or guardian to test
 * EthereumEndpoit - Ethereum url for web3 http provider such as Infura (i.e: https://mainnet.infura.io/v3/<YOUR-INFURA-KEY>)
 * NodesEndpoint - a list of one or more ORBS node management status URLs (i.e: http://54.168.36.177/services/management-service/status), these will be queries in order and first one that answers is the one used.
 
-## Outputs
+### Outputs
 Please have a look at the [model.ts](src/model.ts) for the full output definisions. 
+
+## Development
+
+### Download 
+```
+git clone https://github.com/orbs-network/pos-analytics-lib
+cd pos-analytics-lib
+```
+
+### Build 
+```
+npm run build
+```
+
+### Clean 
+```
+npm run clean
+```
+
+### Test
+There is only an "E2E" like test that calls all functions of the library, to run it you must setup an Ethereum-Endpoint for web3 http provider. This can be done by setting an enviroment variable in your running IDEA named `ETHEREUM_ENDPOINT`, or adding a file named `.env` at the root of the directory and in that file have one line `ETHEREUM_ENDPOINT=https://mainnet.infura.io/v3/<YOUR-INFURA-KEY>`
+
+Then you can run the test
+
+```
+npm run test
+```
+
+The results will be in a direcotry `data` under root direcotry of the project. You will see 4 json files, one for each function call.
+
