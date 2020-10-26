@@ -9,7 +9,7 @@
 import _ from 'lodash';
 import BigNumber from 'bignumber.js';
 import { fetchJson, bigToNumber } from './helpers';
-import { getWeb3, Contracts, getBlockEstimatedTime, readContractEvents, addressToTopic, Topics, ascendingEvents } from "./eth-helpers";
+import { getWeb3, Contracts, getBlockEstimatedTime, readContractEvents, addressToTopic, Topics, ascendingEvents, readBalances } from "./eth-helpers";
 import { Guardian, GuardianInfo, GuardianDelegator, GuardianReward, GuardianStake } from './model';
 
 export async function getGuardians(networkNodeUrls: string[]): Promise<Guardian[]> {
@@ -68,7 +68,7 @@ async function getStakeChanges(address: string, web3:any) {
                 last_change_time: 0,
                 address: delegatorAddress,
                 stake: bigToNumber(new BigNumber(event.returnValues.delegatorContributedStake)),
-                balance: 0,
+                non_stake: 0,
             }
             delegatorMap[delegatorAddress] = d;
         }
@@ -79,7 +79,11 @@ async function getStakeChanges(address: string, web3:any) {
         addOrUpdateStakeList(stakes, event.blockNumber, bigToNumber(selfDelegate), bigToNumber(allStake.minus(selfDelegate)), _.size(delegatorMap));
     }
     stakes.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc
-    _.forOwn(delegatorMap, (v) => v.last_change_time = getBlockEstimatedTime(v.last_change_block));
+    const balanceMap = await readBalances(_.keys(delegatorMap), web3);
+    _.forOwn(delegatorMap, (v) => {
+        v.last_change_time = getBlockEstimatedTime(v.last_change_block);
+        v.non_stake = balanceMap[v.address];
+    });
 
     return { stakes, delegatorMap };
 }

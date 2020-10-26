@@ -14,9 +14,9 @@ export function toConsole(x:any){ return JSON.stringify(x, null, 2)}
 async function x() {
     const ethereumEndpoint = String(process.env.ETHEREUM_ENDPOINT);
     const nodeEndpoints = [
-        'http://54.168.36.177/services/management-service/status',
-        'http://52.20.37.155/services/management-service/status',
-        'http://54.241.122.39/services/management-service/status'
+        'http://54.168.36.177/services/management-service/status', // for dev non https
+        'http://52.20.37.155/services/management-service/status',  // for dev non https
+        //https://guardian.v2beta.orbs.com/services/management-service/status  // for actual production front-end with https
     ];
 
     const delegatorInfo = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint);

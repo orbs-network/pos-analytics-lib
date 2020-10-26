@@ -9,11 +9,14 @@
 import _ from 'lodash';
 import Web3 from 'web3';
 import BigNumber from 'bignumber.js';
+// @ts-ignore
+import { aggregate } from '@makerdao/multicall';
 import { erc20Abi } from './abis/erc20';
 import { stakeAbi } from './abis/stake';
 import { delegationAbi } from './abis/delegation';
 import { guardianAbi } from './abis/guardian';
 import { rewardsAbi } from './abis/rewards';
+import { bigToNumber } from './helpers';
 
 export enum Topics {
     Staked = '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
@@ -77,6 +80,24 @@ export async function readBalanceOf(address:string, web3:any) {
     const erc20Contracts = getPoSContracts(web3, Contracts.Erc20);
     const currentErc20Contract = erc20Contracts[erc20Contracts.length-1];
     return new BigNumber(await currentErc20Contract.methods.balanceOf(address).call());
+}
+
+// Function depends on version 0.11.0 of makderdao/multicall
+const MulticallContractAddress = '0xeefBa1e63905eF1D7ACbA5a8513c70307C1cE441'
+export async function readBalances(addresses:string[], web3:any) {
+    const config = { web3, multicallAddress: MulticallContractAddress};
+    const currentErc20Address = Erc20Addresses[Erc20Addresses.length-1];
+    const calls: any[] = [];
+
+    for (let address of addresses) {
+        calls.push({
+            target: currentErc20Address, 
+            call: ['balanceOf(address)(uint256)', address],
+            returns: [[address, (v: BigNumber.Value) => bigToNumber(new BigNumber(v))]]
+        });
+    }
+    const r = await aggregate(calls, config);
+    return r.results.transformed;
 }
 
 export async function readContractEvents(filter: (string | undefined)[], contractsType:Contracts, web3:Web3) {

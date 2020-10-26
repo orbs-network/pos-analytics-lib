@@ -72,7 +72,7 @@ export interface GuardianDelegator {
     last_change_time: number;
     address: string;
     stake: number;
-    balance: number;
+    non_stake: number;
 }
 
 export interface Delegator {
