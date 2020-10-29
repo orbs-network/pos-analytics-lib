@@ -82,6 +82,22 @@ export async function readBalanceOf(address:string, web3:any) {
     return new BigNumber(await currentErc20Contract.methods.balanceOf(address).call());
 }
 
+export async function readCurrentStakeOf(address:string, web3:any) {
+    const stakeContracts = getPoSContracts(web3, Contracts.Stake);
+    const currentStakeContract = stakeContracts[stakeContracts.length-1];
+    const txs = [
+        currentStakeContract.methods.getStakeBalanceOf(address).call(),
+        currentStakeContract.methods.getUnstakeStatus(address).call()
+    ];
+    const res = await Promise.all(txs);
+    console.log(JSON.stringify(res));
+    return { 
+        currentStake: new BigNumber(res[0]), 
+        currentCooldown: new BigNumber(res[1].cooldownAmount),
+        currentCooldownTime: new BigNumber(res[1].cooldownEndTime).toNumber(),
+    };
+}
+
 // Function depends on version 0.11.0 of makderdao/multicall
 const MulticallContractAddress = '0xeefBa1e63905eF1D7ACbA5a8513c70307C1cE441'
 export async function readBalances(addresses:string[], web3:any) {

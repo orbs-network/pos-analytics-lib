@@ -20,13 +20,15 @@ export interface PosOverview {
 export interface PosOverviewSlice {
     block_number: number;
     block_time: number;
+    total_weight: number;
+    total_effective_stake: number;
     data: PosOverviewData[];
 } 
 
 export interface PosOverviewData {
     name: string;
     address: string;
-    effectiveStake: number;
+    effective_stake: number;
     weight: number;
 }
 
@@ -34,7 +36,7 @@ export interface Guardian {
     name: string;
     address: string;
     website: string;
-    effectiveStake: number;
+    effective_stake: number;
 }
 
 export interface GuardianInfo {
@@ -107,7 +109,7 @@ export interface DelegatorAction {
     block_time: number;
     tx_hash: string;
     amount?: number;
-    currentStake?: number;
+    current_stake?: number;
     to?: string;
-    additionalInfoLink?: string;
+    additional_info_link?: string;
 }

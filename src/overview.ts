@@ -36,20 +36,29 @@ async function parseRawData(data:any, ethereumEndpoint:string) : Promise<PosOver
     const slices: PosOverviewSlice[] = [];
     _.forEach(data.CommitteeEvents, event => {
         const committee: PosOverviewData[] = [];
+        let total_effective = 0;
+        let total_weight = 0;
 
         _.forEach(event.Committee, member => {
+            const effectiveStake = Number(member?.EffectiveStake || 0);
+            const weight = Number(member?.Weight || 0);
+            total_effective += effectiveStake;
+            total_weight += weight
             committee.push(
             {
                 name: addrToName[member.EthAddress],
                 address: '0x' + String(member.EthAddress).toLowerCase(),
-                effectiveStake: Number(member?.EffectiveStake || 0),
-                weight: Number(member?.Weight || 0),
+                effective_stake: effectiveStake,
+                weight: weight,
             });
         });
+        committee.sort((n1:any, n2:any) => n2.effectiveStake - n1.effectiveStake); // desc
 
         slices.push({
             block_number: event.RefBlock || 0,
             block_time: event.RefTime,
+            total_effective_stake: total_effective,
+            total_weight: total_weight,
             data: committee
         })
     });

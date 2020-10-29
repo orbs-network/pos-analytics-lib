@@ -8,8 +8,8 @@
 
 import _ from 'lodash';
 import BigNumber from "bignumber.js";
-import { bigToNumber } from './helpers';
-import { addressToTopic, ascendingEvents, Contracts, generateTxLink, getBlockEstimatedTime, getWeb3, readBalanceOf, readContractEvents, Topics } from "./eth-helpers";
+import { bigToNumber, getCurrentClockTime } from './helpers';
+import { addressToTopic, ascendingEvents, Contracts, generateTxLink, getBlockEstimatedTime, getCurrentBlockInfo, getWeb3, readBalanceOf, readContractEvents, Topics } from "./eth-helpers";
 import { Delegator, DelegatorAction, DelegatorReward, DelegatorStake } from "./model";
 
 export async function getDelegator(address: string, etherumEndpoint: string): Promise<Delegator> {
@@ -81,8 +81,8 @@ async function getStakeActions(address:string, web3:any) {
             block_time: blockTime,
             tx_hash: event.transactionHash,
             amount: bigToNumber(amount),
-            currentStake: bigToNumber(totalStake),
-            additionalInfoLink: generateTxLink(event.transactionHash),
+            current_stake: bigToNumber(totalStake),
+            additional_info_link: generateTxLink(event.transactionHash),
         });
         stakes.push({
             block_number: event.blockNumber,
@@ -91,6 +91,18 @@ async function getStakeActions(address:string, web3:any) {
             cooldown: bigToNumber(coolDownStake),
         });
     }
+
+    // if last stake event is more than a day ago, generate an extra (copy really) with current block/time
+    if ((stakes[stakes.length-1].block_time + 86400) < getCurrentClockTime()) { 
+        const block = await getCurrentBlockInfo(web3);
+        stakes.push({
+            block_number: block.number,
+            block_time: block.time,
+            stake: bigToNumber(totalStake),
+            cooldown: bigToNumber(coolDownStake),
+        })
+    }
+
     stakes.sort((n1:any, n2:any) => n2.block_number - n1.block_number);  // desc
 
     return { stakeActions, stakes, totalStake, coolDownStake };
@@ -113,7 +125,7 @@ async function getDelegateActions(address:string, web3:any) {
             block_number: event.blockNumber,
             tx_hash: event.transactionHash,
             to: String(event.returnValues.to).toLowerCase(),
-            additionalInfoLink: generateTxLink(event.transactionHash),
+            additional_info_link: generateTxLink(event.transactionHash),
         });
     }
 
