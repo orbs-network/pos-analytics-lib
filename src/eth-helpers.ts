@@ -17,6 +17,7 @@ import { delegationAbi } from './abis/delegation';
 import { guardianAbi } from './abis/guardian';
 import { rewardsAbi } from './abis/rewards';
 import { bigToNumber } from './helpers';
+import { feeBootstrapRewardAbi } from './abis/feebootstrap';
 
 export enum Topics {
     Staked = '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
@@ -26,6 +27,15 @@ export enum Topics {
 
     Delegated = '0x4bc154dd35d6a5cb9206482ecb473cdbf2473006d6bce728b9cc0741bcc59ea2',
     DelegateStakeChanged = '0x52db726bc1b1643b24886ed6f0194a41de9abac79d1c12108aca494e5b2bda6b',
+
+    DelegatorRewardAssigned = '0x411edbca4a882d6fbf12b557451a9358a63f73e3011a8c712885cb1e207120dd',
+    GuardianRewardAssigned = '0x3880098574881d40bf7b9775086fdc9e6d6edac939d881add769581473c84b45',
+    StakingRewardsClaimed = '0x5f51e0cd4567b63928e199868f571929625ded3459b724759a0eb8edbf94158b',
+
+    BootstrapRewardAssigned = '0x0964bebae9e6862697e967a3fe1c7ba8a0f52ba9b6d2cd754a41e8c3be7f8d66',
+    FeeAssigned = '0x40ed9423e22a17617adb53819ad0279d3d22356c958e384e233214c870561b99',
+    BootstrapWithdrawn = '0x565f40e50eac33ad36895230f693465a27f5341f25e6525568ae66cb24eb1a15',
+    FeeWithdrawn = '0xdeb5099d7943aa2b4c1142e5d53d2f7636aa8f7bd130ec79816f151572bcdf45',
 }
 
 export enum Contracts {
@@ -33,18 +43,28 @@ export enum Contracts {
     Stake = 'Stake',
     Delegate = 'Delegate',
     Reward = 'Reward',
+    FeeBootstrapReward = 'FeeBootstrapReward',
     Guardian = 'Guardian',
 }
 const Erc20Addresses = ['0xff56Cc6b1E6dEd347aA0B7676C85AB0B3D08B0FA'];
 const StakeAddresses = ['0x01D59Af68E2dcb44e04C50e05F62E7043F2656C3'];
 const DelegateAddresses = ['0x53d56b4b1EaEd898Be40cF445a715c55dDD6B09C'];
-const RewardAddresses = ['0x281e714ee8bFD7208B07205fb93d7C9298f3a807'];
-const GuardianAddresses = ['0xAB7F3d56Da621Cff1F5646642d7F79f6A201E4eD'];
+const RewardAddresses = ['0x71D60f980B3ebF432CAA67962b859A12f3b8c5ea'];
+const FeeBootstrapRewardAddresses = ['0xa2de0c08a050800b9171aab7dc97a33cb5f8e9db'];
+const GuardianAddresses = ['0x10e441aa45a7fb4230d1370fba3cf98269bd4b5d'];
 
 const FirstPoSv2BlockNumber = 9830000;
 const FirstPoSv2BlockTime = 1586328645;
 const referenceBlockTime = 1603200055;
 const referenceBlockNumber = 11093232;
+
+export function getWeb3(ethereumEndpoint: string): any {
+    const web3 = new Web3(new Web3.providers.HttpProvider(ethereumEndpoint, {keepAlive: true,}));
+    web3.eth.transactionBlockTimeout = 0; // to stop web3 from polling pending tx
+    web3.eth.transactionPollingTimeout = 0; // to stop web3 from polling pending tx
+    web3.eth.transactionConfirmationBlocks = 1; // to stop web3 from polling pending tx
+    return web3;
+}
 
 export interface BlockInfo {
     time: number;
@@ -64,41 +84,13 @@ export function getBlockEstimatedTime(blockNumber: number, refBlock?: BlockInfo)
     return FirstPoSv2BlockTime + Math.round((blockNumber - FirstPoSv2BlockNumber) * avgBlockTime);
 }
 
-export function getWeb3(ethereumEndpoint: string): any {
-    const web3 = new Web3(new Web3.providers.HttpProvider(ethereumEndpoint, {keepAlive: true,}));
-    web3.eth.transactionBlockTimeout = 0; // to stop web3 from polling pending tx
-    web3.eth.transactionPollingTimeout = 0; // to stop web3 from polling pending tx
-    web3.eth.transactionConfirmationBlocks = 1; // to stop web3 from polling pending tx
-    return web3;
-}
-  
-export function addressToTopic(address:string) {
-    return '0x000000000000000000000000' + address.substr(2).toLowerCase();
-}
-
-export async function readBalanceOf(address:string, web3:any) {
+export async function readBalanceOf(address:string, blockNumber: number, web3:any) {
     const erc20Contracts = getPoSContracts(web3, Contracts.Erc20);
     const currentErc20Contract = erc20Contracts[erc20Contracts.length-1];
-    return new BigNumber(await currentErc20Contract.methods.balanceOf(address).call());
+    return new BigNumber(await currentErc20Contract.methods.balanceOf(address).call({}, blockNumber));
 }
 
-export async function readCurrentStakeOf(address:string, web3:any) {
-    const stakeContracts = getPoSContracts(web3, Contracts.Stake);
-    const currentStakeContract = stakeContracts[stakeContracts.length-1];
-    const txs = [
-        currentStakeContract.methods.getStakeBalanceOf(address).call(),
-        currentStakeContract.methods.getUnstakeStatus(address).call()
-    ];
-    const res = await Promise.all(txs);
-    console.log(JSON.stringify(res));
-    return { 
-        currentStake: new BigNumber(res[0]), 
-        currentCooldown: new BigNumber(res[1].cooldownAmount),
-        currentCooldownTime: new BigNumber(res[1].cooldownEndTime).toNumber(),
-    };
-}
-
-// Function depends on version 0.11.0 of makderdao/multicall
+// Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
 const MulticallContractAddress = '0xeefBa1e63905eF1D7ACbA5a8513c70307C1cE441'
 export async function readBalances(addresses:string[], web3:any) {
     const config = { web3, multicallAddress: MulticallContractAddress};
@@ -114,6 +106,63 @@ export async function readBalances(addresses:string[], web3:any) {
     }
     const r = await aggregate(calls, config);
     return r.results.transformed;
+}
+
+export async function readStakeOf(address:string, blockNumber: number, web3:any) {
+    const stakeContracts = getPoSContracts(web3, Contracts.Stake);
+    const currentStakeContract = stakeContracts[stakeContracts.length-1];
+    const txs = [
+        currentStakeContract.methods.getStakeBalanceOf(address).call({}, blockNumber),
+        currentStakeContract.methods.getUnstakeStatus(address).call({}, blockNumber)
+    ];
+    const res = await Promise.all(txs);
+    return { 
+        currentStake: new BigNumber(res[0]), 
+        currentCooldown: new BigNumber(res[1].cooldownAmount),
+        currentCooldownTime: new BigNumber(res[1].cooldownEndTime).toNumber(),
+    };
+}
+
+export async function readDelegatorRewards(address:string, blockNumber: number, web3:any) {
+    const rewardsContracts = getPoSContracts(web3, Contracts.Reward);
+    const currentRewardContract = rewardsContracts[rewardsContracts.length-1];
+    const res = await currentRewardContract.methods.getDelegatorStakingRewardsData(address).call({}, blockNumber);
+    return { 
+        balance: new BigNumber(res.balance), 
+        claimed: new BigNumber(res.claimed), 
+        guardian: res.guardian
+    };
+}
+
+export async function readGuardianRewards(address:string, blockNumber: number, web3:any) {
+    const rewardsContracts = getPoSContracts(web3, Contracts.Reward);
+    const currentRewardContract = rewardsContracts[rewardsContracts.length-1];
+    const txs = [
+        currentRewardContract.methods.getGuardianStakingRewardsData(address).call({}, blockNumber),
+        currentRewardContract.methods.getGuardianDelegatorsStakingRewardsPercentMille(address).call({}, blockNumber)
+    ];
+    const res = await Promise.all(txs);
+    return  {
+        balance: new BigNumber(res[0].balance),
+        claimed: new BigNumber(res[0].claimed),
+        delegatorShare: new BigNumber(res[1])
+    }
+}
+
+export async function readGuardianFeeAndBootstrapRewards(address:string, blockNumber: number, web3:any) {
+    const rewardsContracts = getPoSContracts(web3, Contracts.FeeBootstrapReward);
+    const currentRewardContract = rewardsContracts[rewardsContracts.length-1];
+    const res = await currentRewardContract.methods.getFeesAndBootstrapData(address).call({}, blockNumber);
+    return {
+        feeBalance: new BigNumber(res.feeBalance),
+        withdrawnFees: new BigNumber(res.withdrawnFees),
+        bootstrapBalance: new BigNumber(res.bootstrapBalance),
+        withdrawnBootstrap: new BigNumber(res.withdrawnBootstrap),
+    };
+}
+
+export function addressToTopic(address:string) {
+    return '0x000000000000000000000000' + address.substr(2).toLowerCase();
 }
 
 export async function readContractEvents(filter: (string | undefined)[], contractsType:Contracts, web3:Web3) {
@@ -176,6 +225,10 @@ export function getPoSContracts(web3:any, contract: Contracts): any[] {
         case Contracts.Reward:
             abi = rewardsAbi;
             addresses = RewardAddresses;
+            break;
+        case Contracts.FeeBootstrapReward:
+            abi = feeBootstrapRewardAbi;
+            addresses = FeeBootstrapRewardAddresses;
             break;
         case Contracts.Guardian:
             abi = guardianAbi;
