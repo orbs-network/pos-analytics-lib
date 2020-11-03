@@ -8,8 +8,8 @@
 
 import _ from 'lodash';
 import BigNumber from "bignumber.js";
-import { bigToNumber, getCurrentClockTime } from './helpers';
-import { addressToTopic, ascendingEvents, BlockInfo, Contracts, generateTxLink, getBlockEstimatedTime, getCurrentBlockInfo, getWeb3, readBalanceOf, readContractEvents, readDelegatorRewards, Topics } from "./eth-helpers";
+import { bigToNumber } from './helpers';
+import { addressToTopic, ascendingEvents, BlockInfo, Contracts, generateTxLink, getBlockEstimatedTime, getCurrentBlockInfo, getWeb3, readContractEvents, readDelegatorDataFromState, Topics } from "./eth-helpers";
 import { Delegator, DelegatorAction, DelegatorReward, DelegatorStake } from "./model";
 
 export async function getDelegator(address: string, etherumEndpoint: string): Promise<Delegator> {
@@ -19,26 +19,38 @@ export async function getDelegator(address: string, etherumEndpoint: string): Pr
     // fix block for all "state" data.
     const block = await getCurrentBlockInfo(web3);
 
-    const { stakeActions, stakes, totalStake, coolDownStake } = await getStakeActions(address, web3, block);
-    actions.push(...stakeActions);
+    const ethData = await readDelegatorDataFromState(address, block.number, web3)
 
-    const { delegateActions, delegation } = await getDelegateActions(address, web3);
+    const { stakes, stakeActions } = await getStakeActions(address, web3);
+    actions.push(...stakeActions);
+    stakes.unshift({  // insert "now" data
+        block_number: block.number,
+        block_time: block.time,
+        stake: ethData.staked,
+        cooldown: ethData.cooldown_stake,
+    })
+
+    const { delegateActions } = await getDelegateActions(address, web3);
     actions.push(...delegateActions);
 
-    const { rewardStatus, rewards, claimActions } = await getDelegatorRewards(address, web3, block);
+    const { rewards, claimActions } = await getDelegatorRewards(address, web3);
     actions.push(...claimActions);
-
-    const erc20Balance = await readBalanceOf(address, block.number, web3);
+    updateRewards(rewards, ethData, block); // insert "now" data
 
     actions.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc unlikely delegator actions in same block
 
     return {
         address: address.toLowerCase(),
-        total_stake: bigToNumber(totalStake),
-        cool_down_stake: bigToNumber(coolDownStake),
-        non_stake: bigToNumber(erc20Balance),
-        delegated_to: String(delegation).toLowerCase(),
-        rewards_status: rewardStatus,
+        block_number: block.number,
+        block_time: block.time,
+        total_stake: ethData.staked,
+        cooldown_stake: ethData.cooldown_stake,
+        current_cooldown_time: ethData.current_cooldown_time,
+        non_stake: ethData.non_stake,
+        delegated_to: ethData.guardian,
+        rewards_balance: bigToNumber(ethData.reward_balance),
+        rewards_claimed: bigToNumber(ethData.reward_claimed),
+        total_rewards: bigToNumber(ethData.reward_balance.plus(ethData.reward_claimed)),
         stake_slices: stakes,
         actions, 
         reward_slices: rewards
@@ -46,7 +58,7 @@ export async function getDelegator(address: string, etherumEndpoint: string): Pr
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function getStakeActions(address:string, web3:any, block?: BlockInfo) {
+export async function getStakeActions(address:string, web3:any) {
     const filter = [undefined /*don't filter event type*/, addressToTopic(address)];
     const events = await readContractEvents(filter, Contracts.Stake, web3);
     
@@ -95,31 +107,17 @@ export async function getStakeActions(address:string, web3:any, block?: BlockInf
         });
     }
 
-    // if last stake event is more than a day ago, generate an extra (copy really) with current block/time
-    if ((stakes[stakes.length-1].block_time + 86400) < getCurrentClockTime()) { 
-        if (!_.isObject(block)) {
-            block = await getCurrentBlockInfo(web3);
-        }
-        stakes.push({
-            block_number: block.number,
-            block_time: block.time,
-            stake: bigToNumber(totalStake),
-            cooldown: bigToNumber(coolDownStake),
-        })
-    }
-
     stakes.sort((n1:any, n2:any) => n2.block_number - n1.block_number);  // desc
 
-    return { stakeActions, stakes, totalStake, coolDownStake };
+    return { stakes, stakeActions, totalStake, coolDownStake };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getDelegateActions(address:string, web3:any) {
     const filter = [Topics.Delegated, addressToTopic(address)];
     const events = await readContractEvents(filter, Contracts.Delegate, web3);
-    
+
     const delegateActions: DelegatorAction[] = [];
-    events.sort(ascendingEvents); 
     
     for (let event of events) {
         delegateActions.push({
@@ -133,13 +131,11 @@ export async function getDelegateActions(address:string, web3:any) {
         });
     }
 
-    const delegation = events.length > 0 ? String(events[events.length-1].returnValues.to).toLowerCase(): '';
-
-    return { delegateActions, delegation };
+    return { delegateActions };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function getDelegatorRewards(address: string, web3:any, block?: BlockInfo) {
+export async function getDelegatorRewards(address: string, web3:any) {
     const rewards: DelegatorReward[] = [];
     const claimActions: DelegatorAction[] = [];
 
@@ -174,18 +170,17 @@ export async function getDelegatorRewards(address: string, web3:any, block?: Blo
         }
     }
 
-    if (!_.isObject(block)) {
-        block = await getCurrentBlockInfo(web3);
-    }
-    const { balance, claimed } = await readDelegatorRewards(address, block.number, web3);
+    return { rewards, claimActions };
+}
 
-    const rewardStatus = {
+function updateRewards(rewards: DelegatorReward[], ethData:any, block: BlockInfo) {
+    rewards.unshift({
         block_number: block.number,
         block_time: block.time,
-        rewards_balance: bigToNumber(balance),
-        rewards_claimed: bigToNumber(claimed),
-        total_rewards: bigToNumber(balance.plus(claimed)),
-    }
-
-    return {rewardStatus, rewards, claimActions};
+        tx_hash: '',
+        additional_info_link: '',
+        amount: bigToNumber(ethData.reward_balance),
+        total_awarded: bigToNumber(ethData.reward_balance.plus(ethData.reward_claimed)), 
+        guardian_from: ethData.guardian,
+    });
 }
