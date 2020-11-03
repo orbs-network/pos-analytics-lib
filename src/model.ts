@@ -37,26 +37,51 @@ export interface Guardian {
     address: string;
     website: string;
     effective_stake: number;
+    ip: string;
 }
 
 export interface GuardianInfo {
     address: string;
+    block_number: number;
+    block_time: number;
+    details: GuardianDetails;
+    stake_status: GuardianStakeStatus;
     reward_status: GuardianRewardStatus;
     stake_slices: GuardianStake[];
     actions: GuardianAction[];
-    reward_slices: GuardianReward[];
+    reward_as_guardian_slices: GuardianReward[];
+    reward_as_delegator_slices: GuardianReward[];
     fees_slices: GuardianReward[];
     bootstrap_slices: GuardianReward[];
     delegators: GuardianDelegator[];
     delegators_left: GuardianDelegator[];
 }
 
+export interface GuardianDetails {
+    name: string;
+    website: string;
+    ip: string;
+    node_address: string;
+    details_URL: string;
+    registration_time: number;
+    last_update_time: number;
+}
+
+export interface GuardianStakeStatus {
+    self_stake: number;
+    cooldown_stake: number;
+    current_cooldown_time: number;
+    non_stake: number;
+    delegated_stake: number;
+}
+
 export interface GuardianRewardStatus {
-    block_number: number;
-    block_time: number;
-    rewards_balance: number;
-    rewards_claimed: number;
-    total_rewards: number;
+    guardian_rewards_balance: number;
+    guardian_rewards_claimed: number;
+    total_guardian_rewards: number;
+    delegator_rewards_balance: number;
+    delegator_rewards_claimed: number;
+    total_delegator_rewards: number;
     fees_balance: number;
     fees_claimed: number;
     total_fees: number;
@@ -103,22 +128,19 @@ export interface GuardianDelegator {
 
 export interface Delegator {
     address: string;
-    total_stake: number;
-    cool_down_stake: number;
-    non_stake: number;
-    delegated_to: string;
-    rewards_status: DelegatorRewardStatus;
-    stake_slices: DelegatorStake[];
-    actions: DelegatorAction[];
-    reward_slices: DelegatorReward[];
-}
-
-export interface DelegatorRewardStatus {
     block_number: number;
     block_time: number;
+    total_stake: number;
+    cooldown_stake: number;
+    current_cooldown_time: number;
+    non_stake: number;
+    delegated_to: string;
     rewards_balance: number;
     rewards_claimed: number;
     total_rewards: number;
+    stake_slices: DelegatorStake[];
+    actions: DelegatorAction[];
+    reward_slices: DelegatorReward[];
 }
 
 export interface DelegatorStake {

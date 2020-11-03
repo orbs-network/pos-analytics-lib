@@ -16,8 +16,8 @@ import { stakeAbi } from './abis/stake';
 import { delegationAbi } from './abis/delegation';
 import { guardianAbi } from './abis/guardian';
 import { rewardsAbi } from './abis/rewards';
-import { bigToNumber } from './helpers';
 import { feeBootstrapRewardAbi } from './abis/feebootstrap';
+import { bigToNumber, getIpFromHex } from './helpers';
 
 export enum Topics {
     Staked = '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
@@ -84,12 +84,6 @@ export function getBlockEstimatedTime(blockNumber: number, refBlock?: BlockInfo)
     return FirstPoSv2BlockTime + Math.round((blockNumber - FirstPoSv2BlockNumber) * avgBlockTime);
 }
 
-export async function readBalanceOf(address:string, blockNumber: number, web3:any) {
-    const erc20Contracts = getPoSContracts(web3, Contracts.Erc20);
-    const currentErc20Contract = erc20Contracts[erc20Contracts.length-1];
-    return new BigNumber(await currentErc20Contract.methods.balanceOf(address).call({}, blockNumber));
-}
-
 // Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
 const MulticallContractAddress = '0xeefBa1e63905eF1D7ACbA5a8513c70307C1cE441'
 export async function readBalances(addresses:string[], web3:any) {
@@ -108,56 +102,99 @@ export async function readBalances(addresses:string[], web3:any) {
     return r.results.transformed;
 }
 
-export async function readStakeOf(address:string, blockNumber: number, web3:any) {
+export async function readDelegatorDataFromState(address:string, blockNumber: number, web3:any) {
+    const erc20Contracts = getPoSContracts(web3, Contracts.Erc20);
+    const currentErc20Contract = erc20Contracts[erc20Contracts.length-1];
     const stakeContracts = getPoSContracts(web3, Contracts.Stake);
     const currentStakeContract = stakeContracts[stakeContracts.length-1];
+    const rewardsContracts = getPoSContracts(web3, Contracts.Reward);
+    const currentRewardContract = rewardsContracts[rewardsContracts.length-1];
     const txs = [
+        currentErc20Contract.methods.balanceOf(address).call({}, blockNumber),
         currentStakeContract.methods.getStakeBalanceOf(address).call({}, blockNumber),
-        currentStakeContract.methods.getUnstakeStatus(address).call({}, blockNumber)
-    ];
-    const res = await Promise.all(txs);
-    return { 
-        currentStake: new BigNumber(res[0]), 
-        currentCooldown: new BigNumber(res[1].cooldownAmount),
-        currentCooldownTime: new BigNumber(res[1].cooldownEndTime).toNumber(),
-    };
-}
-
-export async function readDelegatorRewards(address:string, blockNumber: number, web3:any) {
-    const rewardsContracts = getPoSContracts(web3, Contracts.Reward);
-    const currentRewardContract = rewardsContracts[rewardsContracts.length-1];
-    const res = await currentRewardContract.methods.getDelegatorStakingRewardsData(address).call({}, blockNumber);
-    return { 
-        balance: new BigNumber(res.balance), 
-        claimed: new BigNumber(res.claimed), 
-        guardian: res.guardian
-    };
-}
-
-export async function readGuardianRewards(address:string, blockNumber: number, web3:any) {
-    const rewardsContracts = getPoSContracts(web3, Contracts.Reward);
-    const currentRewardContract = rewardsContracts[rewardsContracts.length-1];
-    const txs = [
-        currentRewardContract.methods.getGuardianStakingRewardsData(address).call({}, blockNumber),
-        currentRewardContract.methods.getGuardianDelegatorsStakingRewardsPercentMille(address).call({}, blockNumber)
+        currentStakeContract.methods.getUnstakeStatus(address).call({}, blockNumber),
+        currentRewardContract.methods.getDelegatorStakingRewardsData(address).call({}, blockNumber),
     ];
     const res = await Promise.all(txs);
     return  {
-        balance: new BigNumber(res[0].balance),
-        claimed: new BigNumber(res[0].claimed),
-        delegatorShare: new BigNumber(res[1])
-    }
+        non_stake: bigToNumber(new BigNumber(res[0])),
+        staked: bigToNumber(new BigNumber(res[1])),
+        cooldown_stake: bigToNumber(new BigNumber(res[2].cooldownAmount)),
+        current_cooldown_time: new BigNumber(res[2].cooldownEndTime).toNumber(),
+        reward_balance: new BigNumber(res[3].balance), 
+        reward_claimed: new BigNumber(res[3].claimed), 
+        guardian: String(res[3].guardian)
+    };
 }
 
-export async function readGuardianFeeAndBootstrapRewards(address:string, blockNumber: number, web3:any) {
-    const rewardsContracts = getPoSContracts(web3, Contracts.FeeBootstrapReward);
+export async function readGuardianDataFromState(address:string, blockNumber: number, web3:any) {
+    const guardianContracts = getPoSContracts(web3, Contracts.Guardian);
+    const currentGuardianContract = guardianContracts[guardianContracts.length-1];
+    const erc20Contracts = getPoSContracts(web3, Contracts.Erc20);
+    const currentErc20Contract = erc20Contracts[erc20Contracts.length-1];
+    const stakeContracts = getPoSContracts(web3, Contracts.Stake);
+    const currentStakeContract = stakeContracts[stakeContracts.length-1];
+    const delgateContracts = getPoSContracts(web3, Contracts.Delegate);
+    const currentDelegateContract = delgateContracts[delgateContracts.length-1];
+    const rewardsContracts = getPoSContracts(web3, Contracts.Reward);
     const currentRewardContract = rewardsContracts[rewardsContracts.length-1];
-    const res = await currentRewardContract.methods.getFeesAndBootstrapData(address).call({}, blockNumber);
-    return {
-        feeBalance: new BigNumber(res.feeBalance),
-        withdrawnFees: new BigNumber(res.withdrawnFees),
-        bootstrapBalance: new BigNumber(res.bootstrapBalance),
-        withdrawnBootstrap: new BigNumber(res.withdrawnBootstrap),
+    const feeBootstrapContracts = getPoSContracts(web3, Contracts.FeeBootstrapReward);
+    const feeBootstrapRewardContract = feeBootstrapContracts[feeBootstrapContracts.length-1];
+    const txs = [
+        currentGuardianContract.methods.getGuardianData(address).call({}, blockNumber),
+        currentGuardianContract.methods.getMetadata(address, 'ID_FORM_URL').call({}, blockNumber),
+        currentErc20Contract.methods.balanceOf(address).call({}, blockNumber),
+        currentStakeContract.methods.getStakeBalanceOf(address).call({}, blockNumber),
+        currentStakeContract.methods.getUnstakeStatus(address).call({}, blockNumber),
+        currentDelegateContract.methods.getDelegatedStake(address).call({}, blockNumber),
+        currentRewardContract.methods.getGuardianStakingRewardsData(address).call({}, blockNumber),
+        currentRewardContract.methods.getDelegatorStakingRewardsData(address).call({}, blockNumber),
+        currentRewardContract.methods.getGuardianDelegatorsStakingRewardsPercentMille(address).call({}, blockNumber),
+        feeBootstrapRewardContract.methods.getFeesAndBootstrapData(address).call({}, blockNumber),
+    ];
+    const res = await Promise.all(txs);
+
+    const balanceAsGuardian = new BigNumber(res[6].balance);
+    const claimedAsGuardian = new BigNumber(res[6].claimed);
+    const balanceAsDelegator = new BigNumber(res[7].balance);
+    const claimedAsDelegator = new BigNumber(res[7].claimed);
+    const feeBalance = new BigNumber(res[9].feeBalance);
+    const withdrawnFees = new BigNumber(res[9].withdrawnFees);
+    const bootstrapBalance = new BigNumber(res[9].bootstrapBalance);
+    const withdrawnBootstrap = new BigNumber(res[9].withdrawnBootstrap);
+
+    return  {
+        details: {
+            name: String(res[0].name),
+            website: String(res[0].website),
+            ip: getIpFromHex(res[0].ip),
+            node_address: String(res[0].orbsAddr).toLowerCase(),
+            registration_time: new BigNumber(res[0].registrationTime).toNumber(),
+            last_update_time: new BigNumber(res[0].lastUpdateTime).toNumber(),
+            details_URL: String(res[1]),
+        },
+        stake_status: {
+            self_stake: bigToNumber(new BigNumber(res[3])),
+            cooldown_stake: bigToNumber(new BigNumber(res[4].cooldownAmount)),
+            current_cooldown_time: new BigNumber(res[4].cooldownEndTime).toNumber(),
+            non_stake: bigToNumber(new BigNumber(res[2])),
+            delegated_stake: bigToNumber(new BigNumber(res[5])),
+        },
+        reward_status: {
+            guardian_rewards_balance: bigToNumber(balanceAsGuardian), 
+            guardian_rewards_claimed: bigToNumber(claimedAsGuardian),
+            total_guardian_rewards: bigToNumber(balanceAsGuardian.plus(claimedAsGuardian)),
+            delegator_rewards_balance: bigToNumber(balanceAsDelegator), 
+            delegator_rewards_claimed: bigToNumber(claimedAsDelegator),
+            total_delegator_rewards: bigToNumber(balanceAsDelegator.plus(claimedAsDelegator)),
+            fees_balance: bigToNumber(feeBalance), 
+            fees_claimed: bigToNumber(withdrawnFees),
+            total_fees: bigToNumber(feeBalance.plus(withdrawnFees)),
+            bootstrap_balance: bigToNumber(bootstrapBalance), 
+            bootstrap_claimed: bigToNumber(withdrawnBootstrap),
+            total_bootstrap: bigToNumber(bootstrapBalance.plus(withdrawnBootstrap)),
+            delegator_reward_share: new BigNumber(res[8]).toNumber()      
+        }
     };
 }
 
