@@ -36,6 +36,10 @@ export enum Topics {
     FeeAssigned = '0x40ed9423e22a17617adb53819ad0279d3d22356c958e384e233214c870561b99',
     BootstrapWithdrawn = '0x565f40e50eac33ad36895230f693465a27f5341f25e6525568ae66cb24eb1a15',
     FeeWithdrawn = '0xdeb5099d7943aa2b4c1142e5d53d2f7636aa8f7bd130ec79816f151572bcdf45',
+
+    GuardianRegisterd = '0xc2d72ac93e7fb29c534663a530cd3db012d5c336965e423e0ed5ee7a64ed8745',
+    GuardianUpdateData = '0xedbe727a71a63bf990149415e72abb211f748254e2c40d878fdc02f440233d22',
+    GuardianUpdateMetaData = '0x1cf3d48eb5d849f59c9ee28edc1564cde8ca0e708ccaecf5416a48d3810c5657',
 }
 
 export enum Contracts {
@@ -52,11 +56,6 @@ const DelegateAddresses = ['0x53d56b4b1EaEd898Be40cF445a715c55dDD6B09C'];
 const RewardAddresses = ['0x71D60f980B3ebF432CAA67962b859A12f3b8c5ea'];
 const FeeBootstrapRewardAddresses = ['0xa2de0c08a050800b9171aab7dc97a33cb5f8e9db'];
 const GuardianAddresses = ['0x10e441aa45a7fb4230d1370fba3cf98269bd4b5d'];
-
-const FirstPoSv2BlockNumber = 9830000;
-const FirstPoSv2BlockTime = 1586328645;
-const referenceBlockTime = 1603200055;
-const referenceBlockNumber = 11093232;
 
 export function getWeb3(ethereumEndpoint: string): any {
     const web3 = new Web3(new Web3.providers.HttpProvider(ethereumEndpoint, {keepAlive: true,}));
@@ -76,12 +75,25 @@ export async function getCurrentBlockInfo(web3:Web3): Promise<BlockInfo> {
     return {time: Number(block.timestamp), number: block.number }
 }
 
+const FirstPoSv2BlockNumber = 9830000;
+const FirstPoSv2BlockTime = 1586328645;
+const referenceBlockTime = 1603200055;
+const referenceBlockNumber = 11093232;
+
 export function getBlockEstimatedTime(blockNumber: number, refBlock?: BlockInfo) {
     if (!_.isObject(refBlock)) {
         refBlock = {time: referenceBlockTime, number: referenceBlockNumber }
     }
     const avgBlockTime = (refBlock.time - FirstPoSv2BlockTime) / (refBlock.number - FirstPoSv2BlockNumber);
     return FirstPoSv2BlockTime + Math.round((blockNumber - FirstPoSv2BlockNumber) * avgBlockTime);
+}
+
+export function getStartOfPoSBlock(): BlockInfo {
+    return {number: FirstPoSv2BlockNumber, time: FirstPoSv2BlockTime };
+}
+
+export function getStartOfRewardsBlock(): BlockInfo {
+    return {number: 11145373, time: 1603891336 };
 }
 
 // Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
@@ -202,7 +214,7 @@ export function addressToTopic(address:string) {
     return '0x000000000000000000000000' + address.substr(2).toLowerCase();
 }
 
-export async function readContractEvents(filter: (string | undefined)[], contractsType:Contracts, web3:Web3) {
+export async function readContractEvents(filter: (string[] | string | undefined)[], contractsType:Contracts, web3:Web3) {
     const contracts = getPoSContracts(web3, contractsType);
     const allEvents = [];
     for(const contract of contracts) {
@@ -213,7 +225,7 @@ export async function readContractEvents(filter: (string | undefined)[], contrac
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function readEvents(filter: (string | undefined)[], contract:any, web3:any, startBlock: number, endBlock: number | string, pace: number) {
+export async function readEvents(filter: (string[] | string | undefined)[], contract:any, web3:any, startBlock: number, endBlock: number | string, pace: number) {
     try {
         let options = {topics: filter, fromBlock: startBlock, toBlock: endBlock};
         return await contract.getPastEvents('allEvents', options);

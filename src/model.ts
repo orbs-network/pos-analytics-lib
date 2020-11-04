@@ -105,8 +105,9 @@ export interface GuardianAction {
     block_number: number;
     block_time: number;
     tx_hash: string;
-    additional_info_link?: string;
-    amount: number;
+    additional_info_link: string;
+    amount?: number;
+    to?: string;
 }
 
 export interface GuardianReward {
@@ -156,18 +157,18 @@ export interface DelegatorAction {
     block_number: number;
     block_time: number;
     tx_hash: string;
+    additional_info_link?: string;
     amount?: number;
     current_stake?: number;
     to?: string;
-    additional_info_link?: string;
 }
 
 export interface DelegatorReward {
     block_number: number;
     block_time: number;
+    tx_hash: string;
+    additional_info_link: string;
     amount: number;
     total_awarded: number;
     guardian_from: string;
-    tx_hash: string;
-    additional_info_link: string;
 }
