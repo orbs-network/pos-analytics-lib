@@ -52,10 +52,10 @@ export enum Contracts {
 }
 const Erc20Addresses = ['0xff56Cc6b1E6dEd347aA0B7676C85AB0B3D08B0FA'];
 const StakeAddresses = ['0x01D59Af68E2dcb44e04C50e05F62E7043F2656C3'];
-const DelegateAddresses = ['0x53d56b4b1EaEd898Be40cF445a715c55dDD6B09C'];
-const RewardAddresses = ['0x71D60f980B3ebF432CAA67962b859A12f3b8c5ea'];
-const FeeBootstrapRewardAddresses = ['0xa2de0c08a050800b9171aab7dc97a33cb5f8e9db'];
-const GuardianAddresses = ['0x10e441aa45a7fb4230d1370fba3cf98269bd4b5d'];
+const DelegateAddresses = ['0xB97178870F39d4389210086E4BcaccACD715c71d'];
+const RewardAddresses = ['0xB5303c22396333D9D27Dc45bDcC8E7Fc502b4B32'];
+const FeeBootstrapRewardAddresses = ['0xda7e381544Fc73cad7D9E63C86e561452b9B9E9C'];
+const GuardianAddresses = ['0xce97f8c79228c53b8b9ad86800a493d1e7e5d1e3'];
 
 export function getWeb3(ethereumEndpoint: string): any {
     const web3 = new Web3(new Web3.providers.HttpProvider(ethereumEndpoint, {keepAlive: true,}));
