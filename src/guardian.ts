@@ -9,7 +9,7 @@
 import _ from 'lodash';
 import BigNumber from 'bignumber.js';
 import { fetchJson, bigToNumber } from './helpers';
-import { addressToTopic, ascendingEvents, BlockInfo, Contracts, getBlockEstimatedTime, generateTxLink, getCurrentBlockInfo, getWeb3, readBalances, readContractEvents, readGuardianDataFromState, Topics, getStartOfRewardsBlock, getStartOfPoSBlock } from "./eth-helpers";
+import { addressToTopic, ascendingEvents, BlockInfo, Contracts, getBlockEstimatedTime, generateTxLink, getCurrentBlockInfo, getWeb3, readBalances, readContractEvents, readGuardianDataFromState, Topics, getStartOfRewardsBlock, getStartOfPoSBlock, getFirstDelegationBlock } from "./eth-helpers";
 import { Guardian, GuardianInfo, GuardianDelegator, GuardianReward, GuardianStake, GuardianAction, GuardianRewardStatus, GuardianStakeStatus } from './model';
 
 export async function getGuardians(networkNodeUrls: string[]): Promise<Guardian[]> {
@@ -43,12 +43,15 @@ export async function getGuardian(address: string, ethereumEndpoint: string): Pr
     const ethData = await readGuardianDataFromState(address, block.number, web3)
 
     const actions: GuardianAction[] = [];
+    const stakes: GuardianStake[] = [];
 
-    const { stakes, delegatorMap, delegateActions } = await getGuardianStakeAndDelegationChanges(address, web3);
+    const { delegationStakes, delegatorMap, delegateActions } = await getGuardianStakeAndDelegationChanges(address, web3);
     actions.push(...delegateActions);
+    stakes.push(...delegationStakes);
 
-    const stakeActions = await getGuardianStakeActions(address, web3);
+    const { stakeActions, stakesBeforeDelegation } = await getGuardianStakeActions(address, web3);
     actions.push(...stakeActions);
+    stakes.push(...stakesBeforeDelegation);
 
     const registrationActions = await getGuardianRegisterationActions(address, web3);
     actions.push(...registrationActions);
@@ -64,6 +67,7 @@ export async function getGuardian(address: string, ethereumEndpoint: string): Pr
     injectFirstLastRewards(rewardsAsGuardian, rewardsAsDelegator, bootstraps, fees, ethData.reward_status, block); 
 
     actions.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc unlikely guardian actions in same block
+    stakes.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc
 
     return {
         address: address.toLowerCase(),
@@ -89,7 +93,7 @@ export async function getGuardianStakeAndDelegationChanges(address: string, web3
     const events = await readContractEvents(filter, Contracts.Delegate, web3);
 
     const delegatorMap: {[key:string]: GuardianDelegator} = {};
-    const stakes: GuardianStake[] = [];
+    const delegationStakes: GuardianStake[] = [];
     const delegateActions: GuardianAction[] = [];
     events.sort(ascendingEvents); 
     
@@ -109,7 +113,7 @@ export async function getGuardianStakeAndDelegationChanges(address: string, web3
             const selfDelegate = new BigNumber(event.returnValues.selfDelegatedStake);
             const allStake = new BigNumber(event.returnValues.delegatedStake);
                 
-            addOrUpdateStakeList(stakes, event.blockNumber, bigToNumber(selfDelegate), bigToNumber(allStake.minus(selfDelegate)), _.size(delegatorMap));
+            addOrUpdateStakeList(delegationStakes, event.blockNumber, bigToNumber(selfDelegate), bigToNumber(allStake.minus(selfDelegate)), _.size(delegatorMap));
         } else if (event.signature === Topics.Delegated) {
             const toAddress = String(event.returnValues.to).toLowerCase();
             delegateActions.push({
@@ -123,8 +127,6 @@ export async function getGuardianStakeAndDelegationChanges(address: string, web3
             });
         }
     }
-
-    stakes.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc
     
     const balanceMap = await readBalances(_.keys(delegatorMap), web3);
     _.forOwn(delegatorMap, (v) => {
@@ -132,7 +134,7 @@ export async function getGuardianStakeAndDelegationChanges(address: string, web3
         v.non_stake = balanceMap[v.address];
     });
 
-    return { stakes, delegatorMap, delegateActions };
+    return { delegationStakes, delegatorMap, delegateActions };
 }
 
 function addOrUpdateStakeList(stakes: GuardianStake[], blockNumber: number, selfStake: number, delegateStake: number, nDelegators: number) {
@@ -157,20 +159,41 @@ export async function getGuardianStakeActions(address: string, web3:any) {
     const filter = [[Topics.Staked, Topics.Restaked, Topics.Unstaked, Topics.Withdrew], addressToTopic(address)];
     const events = await readContractEvents(filter, Contracts.Stake, web3);
 
-    const actions: GuardianAction[] = [];    
+    let totalStake = new BigNumber(0);
+    const firstDelegationBlock = getFirstDelegationBlock();
+    const stakesBeforeDelegation: GuardianStake[] = [];
+    const stakeActions: GuardianAction[] = [];    
     for (let event of events) {
-        actions.push({
+        const amount = new BigNumber(event.returnValues.amount);
+        if (event.signature === Topics.Staked || event.signature === Topics.Restaked) {
+            totalStake = totalStake.plus(amount);
+        } else if (event.signature === Topics.Unstaked) {
+            totalStake = totalStake.minus(amount)
+        }
+
+        stakeActions.push({
             contract: event.address.toLowerCase(),
             event: event.event,
             block_number: event.blockNumber,
             block_time: getBlockEstimatedTime(event.blockNumber),
             tx_hash: event.transactionHash,
             additional_info_link: generateTxLink(event.transactionHash),
-            amount: bigToNumber(new BigNumber(event.returnValues.amount)),
+            amount: bigToNumber(amount),
+            current_stake: bigToNumber(totalStake)
         });
+
+        if(event.blockNumber < firstDelegationBlock.number) {
+            stakesBeforeDelegation.push({
+                block_number: event.blockNumber,
+                block_time: getBlockEstimatedTime(event.blockNumber),
+                self_stake: bigToNumber(totalStake),
+                delegated_stake: 0,
+                n_delegates: 0,
+            })
+        }
     }
 
-    return actions;
+    return { stakeActions, stakesBeforeDelegation };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

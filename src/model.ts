@@ -107,6 +107,7 @@ export interface GuardianAction {
     tx_hash: string;
     additional_info_link: string;
     amount?: number;
+    current_stake?: number;
     to?: string;
 }
 

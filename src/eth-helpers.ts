@@ -96,6 +96,10 @@ export function getStartOfRewardsBlock(): BlockInfo {
     return {number: 11145373, time: 1603891336 };
 }
 
+export function getFirstDelegationBlock(): BlockInfo {
+    return {number: 11180000, time: 1604308068 };
+}
+
 // Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
 const MulticallContractAddress = '0xeefBa1e63905eF1D7ACbA5a8513c70307C1cE441'
 export async function readBalances(addresses:string[], web3:any) {
