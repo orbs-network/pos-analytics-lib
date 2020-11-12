@@ -96,6 +96,7 @@ export interface GuardianStake {
     block_time: number;
     self_stake: number;
     delegated_stake: number;
+    total_stake: number;
     n_delegates: number;
 }
 

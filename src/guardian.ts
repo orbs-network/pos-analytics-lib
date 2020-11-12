@@ -142,6 +142,7 @@ function addOrUpdateStakeList(stakes: GuardianStake[], blockNumber: number, self
         const curr = stakes[stakes.length-1];
         curr.self_stake = selfStake;
         curr.delegated_stake = delegateStake;
+        curr.total_stake = selfStake + delegateStake;
         curr.n_delegates = nDelegators;
     } else {
         stakes.push({
@@ -149,6 +150,7 @@ function addOrUpdateStakeList(stakes: GuardianStake[], blockNumber: number, self
             block_time: getBlockEstimatedTime(blockNumber),
             self_stake: selfStake,
             delegated_stake: delegateStake,
+            total_stake: selfStake + delegateStake,
             n_delegates: nDelegators,
         });
     }
@@ -183,11 +185,13 @@ export async function getGuardianStakeActions(address: string, web3:any) {
         });
 
         if(event.blockNumber < firstDelegationBlock.number) {
+            const stake = bigToNumber(totalStake);
             stakesBeforeDelegation.push({
                 block_number: event.blockNumber,
                 block_time: getBlockEstimatedTime(event.blockNumber),
-                self_stake: bigToNumber(totalStake),
+                self_stake: stake,
                 delegated_stake: 0,
+                total_stake: stake,
                 n_delegates: 0,
             })
         }
@@ -327,6 +331,7 @@ function injectFirstLastStakes(stakes: GuardianStake[], status: GuardianStakeSta
         block_time: block.time,
         self_stake: status.self_stake,
         delegated_stake: status.delegated_stake,
+        total_stake: status.self_stake + status.delegated_stake,
         n_delegates: stakes[0].n_delegates, // no other way to get this
     });
     const startOfPoS = getStartOfPoSBlock();
@@ -335,6 +340,7 @@ function injectFirstLastStakes(stakes: GuardianStake[], status: GuardianStakeSta
         block_time: startOfPoS.time,
         self_stake: 0,
         delegated_stake: 0,
+        total_stake: 0,
         n_delegates: 0, 
     })
 }
