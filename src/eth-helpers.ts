@@ -11,6 +11,7 @@ import Web3 from 'web3';
 import BigNumber from 'bignumber.js';
 // @ts-ignore
 import { aggregate } from '@makerdao/multicall';
+import { getAbiByContractAddress, getAbiByContractName, getAbiByContractRegistryKey } from '@orbs-network/orbs-ethereum-contracts-v2';
 import { erc20Abi } from './abis/erc20';
 import { stakeAbi } from './abis/stake';
 import { delegationAbi } from './abis/delegation';
@@ -18,6 +19,9 @@ import { guardianAbi } from './abis/guardian';
 import { rewardsAbi } from './abis/rewards';
 import { feeBootstrapRewardAbi } from './abis/feebootstrap';
 import { bigToNumber, getIpFromHex } from './helpers';
+
+const FirstPoSv2BlockNumber = 9830000;
+const FirstPoSv2BlockTime = 1586328645;
 
 export enum Topics {
     Staked = '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
@@ -45,24 +49,56 @@ export enum Topics {
 export enum Contracts {
     Erc20 = 'Erc20',
     Stake = 'Stake',
-    Delegate = 'Delegate',
-    Reward = 'Reward',
-    FeeBootstrapReward = 'FeeBootstrapReward',
-    Guardian = 'Guardian',
+    Delegate = 'delegations',
+    Reward = 'stakingRewards',
+    FeeBootstrapReward = 'feesAndBootstrapRewards',
+    Guardian = 'guardiansRegistration',
+    Registry = 'ContractRegistry'
 }
-const Erc20Addresses = ['0xff56Cc6b1E6dEd347aA0B7676C85AB0B3D08B0FA'];
-const StakeAddresses = ['0x01D59Af68E2dcb44e04C50e05F62E7043F2656C3'];
-const DelegateAddresses = ['0xB97178870F39d4389210086E4BcaccACD715c71d'];
-const RewardAddresses = ['0xB5303c22396333D9D27Dc45bDcC8E7Fc502b4B32'];
-const FeeBootstrapRewardAddresses = ['0xda7e381544Fc73cad7D9E63C86e561452b9B9E9C'];
-const GuardianAddresses = ['0xce97f8c79228c53b8b9ad86800a493d1e7e5d1e3'];
 
-export function getWeb3(ethereumEndpoint: string): any {
+interface ContractValidData {
+    address: string;
+    startBlock: number;
+    endBlock: number | string;
+    abi: any;
+}
+
+interface ContractsData {[key:string]: ContractValidData[]};
+
+export async function getWeb3(ethereumEndpoint: string, readContracts:boolean = true) {
     const web3 = new Web3(new Web3.providers.HttpProvider(ethereumEndpoint, {keepAlive: true,}));
     web3.eth.transactionBlockTimeout = 0; // to stop web3 from polling pending tx
     web3.eth.transactionPollingTimeout = 0; // to stop web3 from polling pending tx
     web3.eth.transactionConfirmationBlocks = 1; // to stop web3 from polling pending tx
-    return web3;
+
+    const contractsData: ContractsData = {};
+    contractsData[Contracts.Delegate] = [];
+    contractsData[Contracts.Reward] = [];
+    contractsData[Contracts.FeeBootstrapReward] = [];
+    contractsData[Contracts.Guardian] = [];
+    contractsData[Contracts.Erc20] = [{address: '0xff56Cc6b1E6dEd347aA0B7676C85AB0B3D08B0FA', startBlock: 5710114, endBlock: 'latest', abi: erc20Abi}];
+    contractsData[Contracts.Stake] = [{address: '0x01D59Af68E2dcb44e04C50e05F62E7043F2656C3', startBlock: FirstPoSv2BlockNumber, endBlock: 'latest', abi: stakeAbi}];
+    contractsData[Contracts.Registry] = [{address: '0xD859701C81119aB12A1e62AF6270aD2AE05c7AB3', startBlock: 11191400, endBlock: 'latest', abi: getAbiByContractName(Contracts.Registry)}];
+    if (readContracts) {
+        await readContractsAddresses(contractsData, web3);
+    }
+
+    Object.assign(web3, {contractsData});
+    return web3
+}
+
+async function readContractsAddresses(contractsData: ContractsData, web3:any) {
+    let currentStartBlock = contractsData[Contracts.Registry][0].startBlock;
+    let currentRegAddress = contractsData[Contracts.Registry][0].address;
+
+    do {
+        const currentRegContract = new web3.eth.Contract(contractsData[Contracts.Registry][0].abi, currentRegAddress);
+        const res = await readRegisteryEvents(contractsData, currentRegContract, currentStartBlock);
+        currentRegAddress = res.nextRegContract;
+        currentStartBlock = res.nextRegStartBlock;
+        // we don't update the registry as this is one time use only (at the moment)
+    } while (currentRegAddress !== '');
+    return contractsData;
 }
 
 export interface BlockInfo {
@@ -75,14 +111,9 @@ export async function getCurrentBlockInfo(web3:Web3): Promise<BlockInfo> {
     return {time: Number(block.timestamp), number: block.number }
 }
 
-const FirstPoSv2BlockNumber = 9830000;
-const FirstPoSv2BlockTime = 1586328645;
-const referenceBlockTime = 1603200055;
-const referenceBlockNumber = 11093232;
-
 export function getBlockEstimatedTime(blockNumber: number, refBlock?: BlockInfo) {
     if (!_.isObject(refBlock)) {
-        refBlock = {time: referenceBlockTime, number: referenceBlockNumber }
+        refBlock = {time: 1603200055, number: 11093232 }
     }
     const avgBlockTime = (refBlock.time - FirstPoSv2BlockTime) / (refBlock.number - FirstPoSv2BlockNumber);
     return FirstPoSv2BlockTime + Math.round((blockNumber - FirstPoSv2BlockNumber) * avgBlockTime);
@@ -104,7 +135,7 @@ export function getFirstDelegationBlock(): BlockInfo {
 const MulticallContractAddress = '0xeefBa1e63905eF1D7ACbA5a8513c70307C1cE441'
 export async function readBalances(addresses:string[], web3:any) {
     const config = { web3, multicallAddress: MulticallContractAddress};
-    const currentErc20Address = Erc20Addresses[Erc20Addresses.length-1];
+    const currentErc20Address = web3.contractsData[Contracts.Erc20][0].address;
     const calls: any[] = [];
 
     for (let address of addresses) {
@@ -119,12 +150,9 @@ export async function readBalances(addresses:string[], web3:any) {
 }
 
 export async function readDelegatorDataFromState(address:string, blockNumber: number, web3:any) {
-    const erc20Contracts = getPoSContracts(web3, Contracts.Erc20);
-    const currentErc20Contract = erc20Contracts[erc20Contracts.length-1];
-    const stakeContracts = getPoSContracts(web3, Contracts.Stake);
-    const currentStakeContract = stakeContracts[stakeContracts.length-1];
-    const rewardsContracts = getPoSContracts(web3, Contracts.Reward);
-    const currentRewardContract = rewardsContracts[rewardsContracts.length-1];
+    const currentErc20Contract = getLatestPoSContract(web3, Contracts.Erc20);
+    const currentStakeContract = getLatestPoSContract(web3, Contracts.Stake);
+    const currentRewardContract = getLatestPoSContract(web3, Contracts.Reward);
     const txs = [
         currentErc20Contract.methods.balanceOf(address).call({}, blockNumber),
         currentStakeContract.methods.getStakeBalanceOf(address).call({}, blockNumber),
@@ -144,19 +172,13 @@ export async function readDelegatorDataFromState(address:string, blockNumber: nu
 }
 
 export async function readGuardianDataFromState(address:string, blockNumber: number, web3:any) {
-    const guardianContracts = getPoSContracts(web3, Contracts.Guardian);
-    const currentGuardianContract = guardianContracts[guardianContracts.length-1];
-    const erc20Contracts = getPoSContracts(web3, Contracts.Erc20);
-    const currentErc20Contract = erc20Contracts[erc20Contracts.length-1];
-    const stakeContracts = getPoSContracts(web3, Contracts.Stake);
-    const currentStakeContract = stakeContracts[stakeContracts.length-1];
-    const delgateContracts = getPoSContracts(web3, Contracts.Delegate);
-    const currentDelegateContract = delgateContracts[delgateContracts.length-1];
-    const rewardsContracts = getPoSContracts(web3, Contracts.Reward);
-    const currentRewardContract = rewardsContracts[rewardsContracts.length-1];
-    const feeBootstrapContracts = getPoSContracts(web3, Contracts.FeeBootstrapReward);
-    const feeBootstrapRewardContract = feeBootstrapContracts[feeBootstrapContracts.length-1];
-    const txs = [
+    const currentGuardianContract = getLatestPoSContract(web3, Contracts.Guardian);
+     const currentErc20Contract = getLatestPoSContract(web3, Contracts.Erc20);
+    const currentStakeContract = getLatestPoSContract(web3, Contracts.Stake);
+    const currentDelegateContract = getLatestPoSContract(web3, Contracts.Delegate);
+    const currentRewardContract = getLatestPoSContract(web3, Contracts.Reward);
+    const feeBootstrapRewardContract = getLatestPoSContract(web3, Contracts.FeeBootstrapReward);
+     const txs = [
         currentGuardianContract.methods.getGuardianData(address).call({}, blockNumber),
         currentGuardianContract.methods.getMetadata(address, 'ID_FORM_URL').call({}, blockNumber),
         currentErc20Contract.methods.balanceOf(address).call({}, blockNumber),
@@ -257,45 +279,70 @@ export async function readEvents(filter: (string[] | string | undefined)[], cont
     }
 }
 
-// Note new Contract leaks this is code for client side only 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function getPoSContracts(web3:any, contract: Contracts): any[] {
-    let abi;
-    let addresses;
-    switch(contract) {
-        case Contracts.Erc20:
-            abi = erc20Abi;
-            addresses = Erc20Addresses;
-            break;
-        case Contracts.Stake:
-            abi = stakeAbi;
-            addresses = StakeAddresses;
-            break;
-        case Contracts.Delegate:
-            abi = delegationAbi;
-            addresses = DelegateAddresses;
-            break;
-        case Contracts.Reward:
-            abi = rewardsAbi;
-            addresses = RewardAddresses;
-            break;
-        case Contracts.FeeBootstrapReward:
-            abi = feeBootstrapRewardAbi;
-            addresses = FeeBootstrapRewardAddresses;
-            break;
-        case Contracts.Guardian:
-            abi = guardianAbi;
-            addresses = GuardianAddresses;
-            break;
-        default:
-            throw new Error(`cannot get contract of unknown PoS contract: ${contract}` )
+async function readRegisteryEvents(contractsData:ContractsData, regContract:any, startBlock:number) {
+    let options = {fromBlock: startBlock, toBlock: 'latest'};
+    const events = await regContract.getPastEvents('allEvents', options);
+    events.sort(ascendingEvents); 
+    for (let event of events) {
+        if (event.event === 'ContractAddressUpdated') {
+            const contractName = event.returnValues.contractName;
+            if (_.has(contractsData, contractName)) {
+                const contractData = contractsData[contractName];
+                if(contractData.length > 0) {
+                    contractData[contractData.length-1].endBlock = event.blockNumber;
+                }
+                const address = String(event.returnValues.addr).toLowerCase();
+                contractData.push({
+                    address,
+                    startBlock: event.blockNumber+1,
+                    endBlock: 'latest',
+                    abi: getAbiForContract(address, contractName)                
+                });
+            }
+        } else if (event.event === 'ContractRegistryUpdated') {
+            return { nextRegContract: String(event.returnValues.newContractRegistry).toLowerCase(), nextRegStartBlock: event.blockNumber };
+        }
     }
-    const contracts = []
-    for (const address of addresses) {
-        contracts.push(new web3.eth.Contract(abi, address));
+    return {nextRegContract: '', nextRegStartBlock: 0};
+}
+
+// Note new Contract leaks this is code for client side only 
+export function getLatestPoSContract(web3:any, contract: Contracts) {
+    const contracts = [];
+    const current = web3.contractsData[contract][web3.contractsData[contract].length-1];
+    return new web3.eth.Contract(current.abi, current.address);
+}
+
+// Note new Contract leaks this is code for client side only 
+export function getPoSContracts(web3:any, contract: Contracts): any[] {
+    const contracts = [];
+    for (const data of web3.contractsData[contract]) {
+        contracts.push(new web3.eth.Contract(data.abi, data.address));
     }
     return contracts
 }
+
+function getAbiForContract(address: string, contractName: any) {
+    // attempts to get the ABI by address first (useful for deprecated contracts and breaking ABI changes)
+    let abi = getAbiByContractAddress(address);
+    if (abi) return abi;
+  
+    abi = getAbiByContractRegistryKey(contractName);
+    if (abi) return abi;
+
+    // ugly fallback
+    if (contractName == Contracts.Delegate) {
+        return delegationAbi;
+    } else if (contractName == Contracts.Reward) {
+        return rewardsAbi;
+    } else if (contractName == Contracts.FeeBootstrapReward) {
+        return feeBootstrapRewardAbi;
+    } else if (contractName == Contracts.Guardian) {
+        return guardianAbi;
+    }
+    
+    throw new Error(`failed to get abi for ${address} type ${contractName}`);
+  }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function ascendingEvents(e1:any, e2:any) {

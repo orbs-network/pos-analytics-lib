@@ -13,7 +13,7 @@ import { addressToTopic, ascendingEvents, BlockInfo, Contracts, generateTxLink, 
 import { Delegator, DelegatorAction, DelegatorReward, DelegatorStake } from "./model";
 
 export async function getDelegator(address: string, etherumEndpoint: string): Promise<Delegator> {
-    const web3 = getWeb3(etherumEndpoint);  
+    const web3 = await getWeb3(etherumEndpoint);  
     const actions: DelegatorAction[] = [];
 
     // fix block for all "state" data.

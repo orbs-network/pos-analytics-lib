@@ -14,10 +14,12 @@ export function toConsole(x:any){ return JSON.stringify(x, null, 2)}
 async function x() {
     const ethereumEndpoint = String(process.env.ETHEREUM_ENDPOINT);
     const nodeEndpoints = [
-        'http://54.168.36.177/services/management-service/status', // for dev non https
+        'https://0xcore.orbs.com/services/management-service/status',  // for actual production front-end with https
+        'http://0xaudit.orbs.com/services/management-service/status', // for dev non https
         'http://52.20.37.155/services/management-service/status',  // for dev non https
-        //https://guardian.v2beta.orbs.com/services/management-service/status  // for actual production front-end with https
     ];
+
+    const s = Date.now()
 
     const delegatorInfo = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint);
     const dfilepath = path.resolve(__dirname, `../data/delegator.json`);   
@@ -29,7 +31,7 @@ async function x() {
     fs.writeFileSync(gsfilepath, toConsole(guardians));
     //console.log(toConsole(guardians));
 
-    const guardianInfo = await getGuardian('0xf7ae622c77d0580f02bcb2f92380d61e3f6e466c', ethereumEndpoint);
+    const guardianInfo = await getGuardian('0xc5e624d6824e626a6f14457810e794e4603cfee2', ethereumEndpoint);
     const gfilepath = path.resolve(__dirname, `../data/guardian.json`);   
     fs.writeFileSync(gfilepath, toConsole(guardianInfo));
     //console.log(toConsole(guardianInfo));
@@ -37,7 +39,9 @@ async function x() {
     const overview = await getOverview(nodeEndpoints, ethereumEndpoint);
     const filepath = path.resolve(__dirname, `../data/overview.json`);   
     fs.writeFileSync(filepath, toConsole(overview));
-    // console.log(toConsole(overview));
+    //console.log(toConsole(overview));
+
+    console.log(`took ${(Date.now() - s) / 1000.0} seconds`)
 }
 
-x().then(()=> process.exit(0)).catch(e => console.log(`${e}`));
+x().then(()=> process.exit(0)).catch(e => console.log(`${e.stack}`));

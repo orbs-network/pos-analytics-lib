@@ -35,7 +35,7 @@ export async function getGuardians(networkNodeUrls: string[]): Promise<Guardian[
 }
 
 export async function getGuardian(address: string, ethereumEndpoint: string): Promise<GuardianInfo> {
-    const web3 = getWeb3(ethereumEndpoint);
+    const web3 = await getWeb3(ethereumEndpoint);
 
     // fix block for all "state" data.
     const block = await getCurrentBlockInfo(web3);
