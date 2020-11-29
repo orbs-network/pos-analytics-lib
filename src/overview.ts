@@ -12,16 +12,17 @@ import { fetchJson } from './helpers';
 import { PosOverview, PosOverviewSlice, PosOverviewData } from './model';
 
 export async function getOverview(networkNodeUrls: string[], ethereumEndpoint: string): Promise<PosOverview> {
+    let fullError = ''; 
     for(const url of networkNodeUrls) {
         try {
             const rawData = await fetchJson(url);
             return parseRawData(rawData.Payload, ethereumEndpoint);
         } catch (e) {
-            //console.log(`Warning: access to URL ${url} failed, trying another. Error: ${e} `)
+            fullError += `Warning: access to URL ${url} failed, trying another. Error: ${e}\n`;
         }
     }
 
-    throw new Error(`Error while creating PoS Overview, all Netowrk Node URL failed to respond.`)
+    throw new Error(`Error while creating list of Guardians, all Netowrk Node URL failed to respond. ${fullError}`);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,12 +65,8 @@ async function parseRawData(data:any, ethereumEndpoint:string) : Promise<PosOver
     });
     slices.sort((n1:any, n2:any) => n2.block_time - n1.block_time); // desc
 
-    // TODO uncomment when the new Interface is published
-    const web3 = getWeb3(ethereumEndpoint);
+    const web3 = await getWeb3(ethereumEndpoint, false);
     const block = await getCurrentBlockInfo(web3);
-    // const rewradsContract = getPoSContracts(web3, Contracts.Reward);
-    // const settings = await rewradsContract.methods.getSettings().call();
-    // const api = Number(settings.annualStakingRewardsRatePercentMille);
     const apy = 4000;
     
     return {
