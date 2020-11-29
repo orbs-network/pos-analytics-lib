@@ -231,7 +231,7 @@ export async function readGuardianDataFromState(address:string, blockNumber: num
             bootstrap_balance: bigToNumber(bootstrapBalance), 
             bootstrap_claimed: bigToNumber(withdrawnBootstrap),
             total_bootstrap: bigToNumber(bootstrapBalance.plus(withdrawnBootstrap)),
-            delegator_reward_share: new BigNumber(res[8]).toNumber()      
+            delegator_reward_share: new BigNumber(res[8]).toNumber() / 100000     
         }
     };
 }
