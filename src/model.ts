@@ -73,6 +73,7 @@ export interface GuardianStakeStatus {
     current_cooldown_time: number;
     non_stake: number;
     delegated_stake: number;
+    total_stake: number;
 }
 
 export interface GuardianRewardStatus {
@@ -95,7 +96,7 @@ export interface GuardianStake {
     block_number: number;
     block_time: number;
     self_stake: number;
-    delegated_stake: number;
+    delegated_stake: number; // note unlike the contract this is only 
     total_stake: number;
     n_delegates: number;
 }

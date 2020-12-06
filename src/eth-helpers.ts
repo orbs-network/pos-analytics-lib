@@ -173,7 +173,7 @@ export async function readDelegatorDataFromState(address:string, blockNumber: nu
 
 export async function readGuardianDataFromState(address:string, blockNumber: number, web3:any) {
     const currentGuardianContract = getLatestPoSContract(web3, Contracts.Guardian);
-     const currentErc20Contract = getLatestPoSContract(web3, Contracts.Erc20);
+    const currentErc20Contract = getLatestPoSContract(web3, Contracts.Erc20);
     const currentStakeContract = getLatestPoSContract(web3, Contracts.Stake);
     const currentDelegateContract = getLatestPoSContract(web3, Contracts.Delegate);
     const currentRewardContract = getLatestPoSContract(web3, Contracts.Reward);
@@ -192,6 +192,8 @@ export async function readGuardianDataFromState(address:string, blockNumber: num
     ];
     const res = await Promise.all(txs);
 
+    const self_stake = new BigNumber(res[3]);
+    const total_stake = new BigNumber(res[5]);
     const balanceAsGuardian = new BigNumber(res[6].balance);
     const claimedAsGuardian = new BigNumber(res[6].claimed);
     const balanceAsDelegator = new BigNumber(res[7].balance);
@@ -200,6 +202,7 @@ export async function readGuardianDataFromState(address:string, blockNumber: num
     const withdrawnFees = new BigNumber(res[9].withdrawnFees);
     const bootstrapBalance = new BigNumber(res[9].bootstrapBalance);
     const withdrawnBootstrap = new BigNumber(res[9].withdrawnBootstrap);
+
 
     return  {
         details: {
@@ -212,11 +215,12 @@ export async function readGuardianDataFromState(address:string, blockNumber: num
             details_URL: String(res[1]),
         },
         stake_status: {
-            self_stake: bigToNumber(new BigNumber(res[3])),
+            self_stake: bigToNumber(self_stake),
             cooldown_stake: bigToNumber(new BigNumber(res[4].cooldownAmount)),
             current_cooldown_time: new BigNumber(res[4].cooldownEndTime).toNumber(),
             non_stake: bigToNumber(new BigNumber(res[2])),
-            delegated_stake: bigToNumber(new BigNumber(res[5])),
+            delegated_stake: bigToNumber(total_stake.minus(self_stake)),
+            total_stake: bigToNumber(total_stake),
         },
         reward_status: {
             guardian_rewards_balance: bigToNumber(balanceAsGuardian), 
@@ -323,12 +327,13 @@ export function getPoSContracts(web3:any, contract: Contracts): any[] {
 }
 
 function getAbiForContract(address: string, contractName: any) {
+    // TODO find way to use the fs in lib mode.
     // attempts to get the ABI by address first (useful for deprecated contracts and breaking ABI changes)
-    let abi = getAbiByContractAddress(address);
-    if (abi) return abi;
+    // let abi = getAbiByContractAddress(address);
+    // if (abi) return abi;
   
-    abi = getAbiByContractRegistryKey(contractName);
-    if (abi) return abi;
+    // abi = getAbiByContractRegistryKey(contractName);
+    // if (abi) return abi;
 
     // ugly fallback
     if (contractName == Contracts.Delegate) {

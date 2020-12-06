@@ -62,13 +62,13 @@ export async function getGuardian(address: string, ethereumEndpoint: string): Pr
     const { bootstraps, fees, withdrawActions } = await getGuardianFeeAndBootstrap(address, web3);
     actions.push(...withdrawActions);
 
-    // add "now" values to lists
-    injectFirstLastStakes(stakes, ethData.stake_status, block);
-    injectFirstLastRewards(rewardsAsGuardian, rewardsAsDelegator, bootstraps, fees, ethData.reward_status, block); 
-
     actions.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc unlikely guardian actions in same block
     stakes.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc
 
+    // add "now" values to lists
+    injectFirstLastStakes(stakes, ethData.stake_status, block);
+    injectFirstLastRewards(rewardsAsGuardian, rewardsAsDelegator, bootstraps, fees, ethData.reward_status, block); 
+    
     return {
         address: address.toLowerCase(),
         block_number: block.number,
@@ -331,7 +331,7 @@ function injectFirstLastStakes(stakes: GuardianStake[], status: GuardianStakeSta
         block_time: block.time,
         self_stake: status.self_stake,
         delegated_stake: status.delegated_stake,
-        total_stake: status.self_stake + status.delegated_stake,
+        total_stake: status.total_stake,
         n_delegates: stakes[0].n_delegates, // no other way to get this
     });
     const startOfPoS = getStartOfPoSBlock();
