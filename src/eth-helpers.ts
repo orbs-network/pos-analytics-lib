@@ -11,7 +11,6 @@ import Web3 from 'web3';
 import BigNumber from 'bignumber.js';
 // @ts-ignore
 import { aggregate } from '@makerdao/multicall';
-import { getAbiByContractAddress, getAbiByContractName, getAbiByContractRegistryKey } from '@orbs-network/orbs-ethereum-contracts-v2';
 import { erc20Abi } from './abis/erc20';
 import { stakeAbi } from './abis/stake';
 import { delegationAbi } from './abis/delegation';
@@ -19,6 +18,7 @@ import { guardianAbi } from './abis/guardian';
 import { rewardsAbi } from './abis/rewards';
 import { feeBootstrapRewardAbi } from './abis/feebootstrap';
 import { bigToNumber, getIpFromHex } from './helpers';
+import { registryAbi } from './abis/registry';
 
 const FirstPoSv2BlockNumber = 9830000;
 const FirstPoSv2BlockTime = 1586328645;
@@ -78,7 +78,7 @@ export async function getWeb3(ethereumEndpoint: string, readContracts:boolean = 
     contractsData[Contracts.Guardian] = [];
     contractsData[Contracts.Erc20] = [{address: '0xff56Cc6b1E6dEd347aA0B7676C85AB0B3D08B0FA', startBlock: 5710114, endBlock: 'latest', abi: erc20Abi}];
     contractsData[Contracts.Stake] = [{address: '0x01D59Af68E2dcb44e04C50e05F62E7043F2656C3', startBlock: FirstPoSv2BlockNumber, endBlock: 'latest', abi: stakeAbi}];
-    contractsData[Contracts.Registry] = [{address: '0xD859701C81119aB12A1e62AF6270aD2AE05c7AB3', startBlock: 11191400, endBlock: 'latest', abi: getAbiByContractName(Contracts.Registry)}];
+    contractsData[Contracts.Registry] = [{address: '0xD859701C81119aB12A1e62AF6270aD2AE05c7AB3', startBlock: 11191400, endBlock: 'latest', abi: registryAbi /*getAbiByContractName(Contracts.Registry)*/ }];
     if (readContracts) {
         await readContractsAddresses(contractsData, web3);
     }
