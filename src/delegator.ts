@@ -13,26 +13,30 @@ import { addressToTopic, ascendingEvents, BlockInfo, Contracts, generateTxLink, 
 import { Delegator, DelegatorAction, DelegatorReward, DelegatorStake } from "./model";
 
 export async function getDelegator(address: string, etherumEndpoint: string): Promise<Delegator> {
-    const web3 = await getWeb3(etherumEndpoint);  
+    const {block, web3} = await getWeb3(etherumEndpoint);  
     const actions: DelegatorAction[] = [];
 
-    // fix block for all "state" data.
-    const block = await getCurrentBlockInfo(web3);
+    const txs: Promise<any>[] = [
+        readDelegatorDataFromState(address, block.number, web3),
+        getStakeActions(address, web3),
+        getDelegateActions(address, web3),
+        getDelegatorRewards(address, web3),
+    ];
 
-    const ethData = await readDelegatorDataFromState(address, block.number, web3)
+    const res = await Promise.all(txs);
 
-    const { stakes, stakeActions } = await getStakeActions(address, web3);
-    actions.push(...stakeActions);
-    injectFirstLastStakes(stakes, ethData, block);
-
-    const { delegateActions } = await getDelegateActions(address, web3);
-    actions.push(...delegateActions);
-
-    const { rewards, claimActions } = await getDelegatorRewards(address, web3);
-    actions.push(...claimActions);
-    injectFirstLastRewards(rewards, ethData, block);
+     const ethData = res[0];
+    const stakes = res[1].stakes;
+    actions.push(...res[1].stakeActions);
+    actions.push(...res[2].delegateActions);
+    actions.push(...res[3].claimActions);
+    const rewards = res[3].rewards;
 
     actions.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc unlikely delegator actions in same block
+    rewards.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc unlikely delegator rewards in same block
+
+    injectFirstLastStakes(stakes, ethData, block);
+    injectFirstLastRewards(rewards, ethData, block);
 
     return {
         address: address.toLowerCase(),

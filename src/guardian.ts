@@ -35,40 +35,45 @@ export async function getGuardians(networkNodeUrls: string[]): Promise<Guardian[
 }
 
 export async function getGuardian(address: string, ethereumEndpoint: string): Promise<GuardianInfo> {
-    const web3 = await getWeb3(ethereumEndpoint);
-
-    // fix block for all "state" data.
-    const block = await getCurrentBlockInfo(web3);
-
-    const ethData = await readGuardianDataFromState(address, block.number, web3)
-
     const actions: GuardianAction[] = [];
     const stakes: GuardianStake[] = [];
 
-    const { delegationStakes, delegatorMap, delegateActions } = await getGuardianStakeAndDelegationChanges(address, web3);
-    actions.push(...delegateActions);
-    stakes.push(...delegationStakes);
+    const {block, web3} = await getWeb3(ethereumEndpoint);
 
-    const { stakeActions, stakesBeforeDelegation } = await getGuardianStakeActions(address, web3);
-    actions.push(...stakeActions);
-    stakes.push(...stakesBeforeDelegation);
-
-    const registrationActions = await getGuardianRegisterationActions(address, web3);
-    actions.push(...registrationActions);
-
-    const { rewardsAsGuardian, rewardsAsDelegator, claimActions } = await getGuardianRewards(address, web3);   
-    actions.push(...claimActions);
-
-    const { bootstraps, fees, withdrawActions } = await getGuardianFeeAndBootstrap(address, web3);
-    actions.push(...withdrawActions);
+   const txs: Promise<any>[] = [
+        readGuardianDataFromState(address, block.number, web3),
+        getGuardianStakeAndDelegationChanges(address, web3),
+        getGuardianStakeActions(address, web3),
+        getGuardianRegisterationActions(address, web3),
+        getGuardianRewards(address, web3),
+        getGuardianFeeAndBootstrap(address, web3)
+    ];
+    const res = await Promise.all(txs);
+    
+    const ethData = res[0];
+    const delegatorMap = res[1].delegatorMap;
+    actions.push(...res[1].delegateActions);
+    stakes.push(...res[1].delegationStakes);
+    actions.push(...res[2].stakeActions);
+    stakes.push(...res[2].stakesBeforeDelegation);
+    actions.push(...res[3]);
+    const rewardsAsGuardian = res[4].rewardsAsGuardian;
+    const rewardsAsDelegator = res[4].rewardsAsDelegator;
+    actions.push(...res[4].claimActions);
+    const bootstraps = res[5].bootstraps;
+    const fees = res[5].fees;
+    actions.push(...res[5].withdrawActions);
 
     actions.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc unlikely guardian actions in same block
-    stakes.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc
+    stakes.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc before delegation unlikely in same block. after delegation we filter same block
 
     // add "now" values to lists
     injectFirstLastStakes(stakes, ethData.stake_status, block);
     injectFirstLastRewards(rewardsAsGuardian, rewardsAsDelegator, bootstraps, fees, ethData.reward_status, block); 
     
+    const delegators = _.map(_.pickBy(delegatorMap, (d) => {return d.stake !== 0}), v => v).sort((n1:any, n2:any) => n2.stake - n1.stake);
+    const delegators_left = _.map(_.pickBy(delegatorMap, (d) => {return d.stake === 0}), v => v);
+
     return {
         address: address.toLowerCase(),
         block_number: block.number,
@@ -82,8 +87,8 @@ export async function getGuardian(address: string, ethereumEndpoint: string): Pr
         reward_as_delegator_slices: rewardsAsDelegator,
         bootstrap_slices: bootstraps, 
         fees_slices: fees,
-        delegators: _.map(_.pickBy(delegatorMap, (d) => {return d.stake !== 0}), v => v).sort((n1:any, n2:any) => n2.stake - n1.stake),
-        delegators_left: _.map(_.pickBy(delegatorMap, (d) => {return d.stake === 0}), v => v),
+        delegators,
+        delegators_left,
     };
 }
 

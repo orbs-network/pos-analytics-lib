@@ -66,7 +66,7 @@ interface ContractValidData {
 interface ContractsData {[key:string]: ContractValidData[]};
 
 export async function getWeb3(ethereumEndpoint: string, readContracts:boolean = true) {
-    const web3 = new Web3(new Web3.providers.HttpProvider(ethereumEndpoint, {keepAlive: true,}));
+   const web3 = new Web3(new Web3.providers.HttpProvider(ethereumEndpoint, {keepAlive: true,}));
     web3.eth.transactionBlockTimeout = 0; // to stop web3 from polling pending tx
     web3.eth.transactionPollingTimeout = 0; // to stop web3 from polling pending tx
     web3.eth.transactionConfirmationBlocks = 1; // to stop web3 from polling pending tx
@@ -79,12 +79,17 @@ export async function getWeb3(ethereumEndpoint: string, readContracts:boolean = 
     contractsData[Contracts.Erc20] = [{address: '0xff56Cc6b1E6dEd347aA0B7676C85AB0B3D08B0FA', startBlock: 5710114, endBlock: 'latest', abi: erc20Abi}];
     contractsData[Contracts.Stake] = [{address: '0x01D59Af68E2dcb44e04C50e05F62E7043F2656C3', startBlock: FirstPoSv2BlockNumber, endBlock: 'latest', abi: stakeAbi}];
     contractsData[Contracts.Registry] = [{address: '0xD859701C81119aB12A1e62AF6270aD2AE05c7AB3', startBlock: 11191400, endBlock: 'latest', abi: registryAbi /*getAbiByContractName(Contracts.Registry)*/ }];
+    
+    const txs: Promise<any>[] = [
+        getCurrentBlockInfo(web3),
+    ]
     if (readContracts) {
-        await readContractsAddresses(contractsData, web3);
+        txs.push(readContractsAddresses(contractsData, web3));
     }
+    const res = await Promise.all(txs); 
 
     Object.assign(web3, {contractsData});
-    return web3
+    return { block: res[0], web3 };
 }
 
 async function readContractsAddresses(contractsData: ContractsData, web3:any) {
@@ -108,7 +113,7 @@ export interface BlockInfo {
   
 export async function getCurrentBlockInfo(web3:Web3): Promise<BlockInfo> {
     const block = await web3.eth.getBlock('latest'); 
-    return {time: Number(block.timestamp), number: block.number }
+    return {time: Number(block.timestamp)-13, number: block.number-1 } // one block back to avoid provider jitter
 }
 
 export function getBlockEstimatedTime(blockNumber: number, refBlock?: BlockInfo) {
