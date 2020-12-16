@@ -7,7 +7,7 @@
  */
 
 import _ from 'lodash';
-import { getCurrentBlockInfo, getWeb3 } from "./eth-helpers";
+import { getWeb3, readOverviewDataFromState } from "./eth-helpers";
 import { fetchJson } from './helpers';
 import { PosOverview, PosOverviewSlice, PosOverviewData } from './model';
 
@@ -28,9 +28,7 @@ export async function getOverview(networkNodeUrls: string[], ethereumEndpoint: s
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function parseRawData(data:any, ethereumEndpoint:string) : Promise<PosOverview> {
     const addrToName: {[key:string]: string} = {};
-    let totalStake = 0;
     _.forEach(data.Guardians, g => {
-        totalStake += g?.DelegatedStake || 0;
         addrToName[g.EthAddress] = g.Name;
     });
 
@@ -65,7 +63,8 @@ async function parseRawData(data:any, ethereumEndpoint:string) : Promise<PosOver
     });
     slices.sort((n1:any, n2:any) => n2.block_time - n1.block_time); // desc
 
-    const {block} = await getWeb3(ethereumEndpoint, false);
+    const {block, web3} = await getWeb3(ethereumEndpoint);
+    const totalStake = await readOverviewDataFromState(block.number, web3);
     const apy = 4000;
     
     return {
@@ -79,4 +78,3 @@ async function parseRawData(data:any, ethereumEndpoint:string) : Promise<PosOver
         slices
     }
 }
-

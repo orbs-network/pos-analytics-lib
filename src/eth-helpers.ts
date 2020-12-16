@@ -154,6 +154,17 @@ export async function readBalances(addresses:string[], web3:any) {
     return r.results.transformed;
 }
 
+export async function readOverviewDataFromState(blockNumber: number, web3:any) {
+    const currentStakeContract = getLatestPoSContract(web3, Contracts.Stake);
+    const currentDelegateContract = getLatestPoSContract(web3, Contracts.Delegate);
+    const txs = [
+        currentStakeContract.methods.getTotalStakedTokens().call({}, blockNumber),
+        currentDelegateContract.methods.uncappedDelegatedStake('0xffffffffffffffffffffffffffffffffffffffff').call({}, blockNumber),
+    ];
+    const res = await Promise.all(txs);
+    return bigToNumber(new BigNumber(res[0]).minus(new BigNumber(res[1])));
+}
+
 export async function readDelegatorDataFromState(address:string, blockNumber: number, web3:any) {
     const currentErc20Contract = getLatestPoSContract(web3, Contracts.Erc20);
     const currentStakeContract = getLatestPoSContract(web3, Contracts.Stake);
@@ -183,7 +194,7 @@ export async function readGuardianDataFromState(address:string, blockNumber: num
     const currentDelegateContract = getLatestPoSContract(web3, Contracts.Delegate);
     const currentRewardContract = getLatestPoSContract(web3, Contracts.Reward);
     const feeBootstrapRewardContract = getLatestPoSContract(web3, Contracts.FeeBootstrapReward);
-     const txs = [
+    const txs = [
         currentGuardianContract.methods.getGuardianData(address).call({}, blockNumber),
         currentGuardianContract.methods.getMetadata(address, 'ID_FORM_URL').call({}, blockNumber),
         currentErc20Contract.methods.balanceOf(address).call({}, blockNumber),
