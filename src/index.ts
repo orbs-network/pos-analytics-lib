@@ -9,5 +9,6 @@
 export { getDelegator } from "./delegator";
 export { getGuardian, getGuardians } from "./guardian";
 export { getOverview } from "./overview";
+export { getDelegatorStakingRewards, getGuardianStakingRewards } from "./rewards";
 
 export * from "./model";

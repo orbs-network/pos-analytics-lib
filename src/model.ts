@@ -32,6 +32,18 @@ export interface PosOverviewData {
     weight: number;
 }
 
+export interface Action {
+    contract: string;
+    event: string;
+    block_number: number;
+    block_time: number;
+    tx_hash: string;
+    additional_info_link: string;
+    amount?: number;
+    current_stake?: number;
+    to?: string;
+}
+
 export interface Guardian {
     name: string;
     address: string;
@@ -48,7 +60,7 @@ export interface GuardianInfo {
     stake_status: GuardianStakeStatus;
     reward_status: GuardianRewardStatus;
     stake_slices: GuardianStake[];
-    actions: GuardianAction[];
+    actions: Action[];
     reward_as_guardian_slices: GuardianReward[];
     reward_as_delegator_slices: GuardianReward[];
     fees_slices: GuardianReward[];
@@ -101,24 +113,13 @@ export interface GuardianStake {
     n_delegates: number;
 }
 
-export interface GuardianAction {
-    contract: string;
-    event: string;
-    block_number: number;
-    block_time: number;
-    tx_hash: string;
-    additional_info_link: string;
-    amount?: number;
-    current_stake?: number;
-    to?: string;
-}
+export interface GuardianAction extends Action {}
 
 export interface GuardianReward {
     block_number: number;
     block_time: number;
     tx_hash: string;
     additional_info_link: string;
-    amount: number;
     total_awarded: number;
 }
 
@@ -143,7 +144,7 @@ export interface Delegator {
     rewards_claimed: number;
     total_rewards: number;
     stake_slices: DelegatorStake[];
-    actions: DelegatorAction[];
+    actions: Action[];
     reward_slices: DelegatorReward[];
 }
 
@@ -154,24 +155,13 @@ export interface DelegatorStake {
     cooldown: number;
 }
 
-export interface DelegatorAction {
-    contract: string;
-    event: string;
-    block_number: number;
-    block_time: number;
-    tx_hash: string;
-    additional_info_link?: string;
-    amount?: number;
-    current_stake?: number;
-    to?: string;
-}
+export interface DelegatorAction extends Action {}
 
 export interface DelegatorReward {
     block_number: number;
     block_time: number;
     tx_hash: string;
     additional_info_link: string;
-    amount: number;
     total_awarded: number;
     guardian_from: string;
 }

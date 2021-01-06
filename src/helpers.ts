@@ -10,8 +10,9 @@ import BigNumber from 'bignumber.js';
 import fetch from 'node-fetch';
 import { retry } from 'ts-retry-promise';
 
+export const DECIMALS = '1e18';
 export function bigToNumber(n: BigNumber):number {
-  return n.dividedBy("1e18").toNumber();
+  return n.dividedBy(DECIMALS).toNumber();
 }
 
 // returns UTC clock time in seconds (similar to unix timestamp / Ethereum block time / RefTime)

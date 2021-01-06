@@ -9,47 +9,61 @@
 import _ from 'lodash';
 import BigNumber from "bignumber.js";
 import { bigToNumber } from './helpers';
-import { addressToTopic, ascendingEvents, BlockInfo, Contracts, generateTxLink, getBlockEstimatedTime, getCurrentBlockInfo, getStartOfPoSBlock, getStartOfRewardsBlock, getWeb3, readContractEvents, readDelegatorDataFromState, Topics } from "./eth-helpers";
+import { addressToTopic, ascendingEvents, BlockInfo, Contracts, generateTxLink, getBlockEstimatedTime, getStartOfPoSBlock, getWeb3, readContractEvents, readDelegatorDataFromState, Topics } from "./eth-helpers";
 import { Delegator, DelegatorAction, DelegatorReward, DelegatorStake } from "./model";
+import { getDelegatorRewardsStakingInternal, getRewardsClaimActions } from './rewards';
 
-export async function getDelegator(address: string, etherumEndpoint: string): Promise<Delegator> {
+export async function getDelegator(address: string, etherumEndpoint: string, full:boolean = false): Promise<Delegator> {
     const {block, web3} = await getWeb3(etherumEndpoint);  
     const actions: DelegatorAction[] = [];
 
-    const txs: Promise<any>[] = [
-        readDelegatorDataFromState(address, block.number, web3),
-        getStakeActions(address, web3),
-        getDelegateActions(address, web3),
-        getDelegatorRewards(address, web3),
-    ];
+    let ethDelegatorData: any;
+    let txs: Promise<any>[];
+    if (full) {
+        ethDelegatorData = await readDelegatorDataFromState(address, block.number, web3);
+        txs = [
+            getStakeActions(address, web3),
+            getDelegateActions(address, web3),
+            getDelegatorRewardsStakingInternal(address, ethDelegatorData, web3),
+        ];
+    } else {
+        txs = [
+            getStakeActions(address, web3),
+            getDelegateActions(address, web3),
+            getRewardsClaimActions(address, web3, false),
+            readDelegatorDataFromState(address, block.number, web3)
+        ];
+    }
 
     const res = await Promise.all(txs);
-
-     const ethData = res[0];
-    const stakes = res[1].stakes;
-    actions.push(...res[1].stakeActions);
-    actions.push(...res[2].delegateActions);
-    actions.push(...res[3].claimActions);
-    const rewards = res[3].rewards;
+    const stakes = res[0].stakes;
+    actions.push(...res[0].stakeActions);
+    actions.push(...res[1].delegateActions);
+    actions.push(...res[2].claimActions);
+    let rewards: DelegatorReward[] = [];
+    if (full) {
+        rewards = res[2].rewards;
+    } else {
+        ethDelegatorData = res[3];
+    }
 
     actions.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc unlikely delegator actions in same block
     rewards.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc unlikely delegator rewards in same block
 
-    injectFirstLastStakes(stakes, ethData, block);
-    injectFirstLastRewards(rewards, ethData, block);
+    injectFirstLastStakes(stakes, ethDelegatorData, block);
 
     return {
         address: address.toLowerCase(),
         block_number: block.number,
         block_time: block.time,
-        total_stake: ethData.staked,
-        cooldown_stake: ethData.cooldown_stake,
-        current_cooldown_time: ethData.current_cooldown_time,
-        non_stake: ethData.non_stake,
-        delegated_to: ethData.guardian,
-        rewards_balance: bigToNumber(ethData.reward_balance),
-        rewards_claimed: bigToNumber(ethData.reward_claimed),
-        total_rewards: bigToNumber(ethData.reward_balance.plus(ethData.reward_claimed)),
+        total_stake: ethDelegatorData.staked,
+        cooldown_stake: ethDelegatorData.cooldown_stake,
+        current_cooldown_time: ethDelegatorData.current_cooldown_time,
+        non_stake: ethDelegatorData.non_stake,
+        delegated_to: ethDelegatorData.guardian,
+        rewards_balance: bigToNumber(ethDelegatorData.reward_balance),
+        rewards_claimed: bigToNumber(ethDelegatorData.reward_claimed),
+        total_rewards: bigToNumber(ethDelegatorData.reward_balance.plus(ethDelegatorData.reward_claimed)),
         stake_slices: stakes,
         actions, 
         reward_slices: rewards
@@ -148,62 +162,4 @@ export async function getDelegateActions(address:string, web3:any) {
     }
 
     return { delegateActions };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function getDelegatorRewards(address: string, web3:any) {
-    const rewards: DelegatorReward[] = [];
-    const claimActions: DelegatorAction[] = [];
-
-    const filter = [[Topics.DelegatorRewardAssigned, Topics.StakingRewardsClaimed], addressToTopic(address)];
-    const events = await readContractEvents(filter, Contracts.Reward, web3);
-    events.sort((n1:any, n2:any) => n2.block_number - n1.block_number);  // desc
-
-    for (let event of events) {
-        if (event.signature ===  Topics.DelegatorRewardAssigned) {
-            rewards.push({
-                block_number: event.blockNumber,
-                block_time: getBlockEstimatedTime(event.blockNumber),
-                tx_hash: event.transactionHash,
-                additional_info_link: generateTxLink(event.transactionHash),
-                amount: bigToNumber(new BigNumber(event.returnValues.amount)),
-                total_awarded: bigToNumber(new BigNumber(event.returnValues.totalAwarded)), 
-                guardian_from: String(event.returnValues.guardian).toLowerCase(),
-            });
-        } else if (event.signature ===  Topics.StakingRewardsClaimed) {
-            claimActions.push({
-                contract: event.address.toLowerCase(),
-                event: event.event,
-                block_number: event.blockNumber,
-                block_time: getBlockEstimatedTime(event.blockNumber),
-                tx_hash: event.transactionHash,
-                additional_info_link: generateTxLink(event.transactionHash),
-                amount: bigToNumber(new BigNumber(event.returnValues.claimedDelegatorRewards)),
-            });
-        }
-    }
-
-    return { rewards, claimActions };
-}
-
-function injectFirstLastRewards(rewards: DelegatorReward[], ethData:any, block: BlockInfo) {
-    rewards.unshift({
-        block_number: block.number,
-        block_time: block.time,
-        tx_hash: '',
-        additional_info_link: '',
-        amount: bigToNumber(ethData.reward_balance),
-        total_awarded: bigToNumber(ethData.reward_balance.plus(ethData.reward_claimed)), 
-        guardian_from: ethData.guardian,
-    });
-    const startBlock = getStartOfRewardsBlock()
-    rewards.push({
-        block_number: startBlock.number,
-        block_time: startBlock.time,
-        tx_hash: '',
-        additional_info_link: '',
-        amount: 0,
-        total_awarded: 0, 
-        guardian_from: '', // this is way before rewards so doesn't really matter.
-    });
 }

@@ -13,10 +13,28 @@ npm i @orbs-network/pos-analytics-lib
 
 * getDelegator
 
-Used to query information about delegator's stake, previous actions and rewards. Funciton's input is the requested delegator's address and an Ethereum endpoint (for example infura link with apikey).
+Used to query information about delegator's stake, previous actions and optional rewards. Funciton's input is the requested delegator's address, an Ethereum endpoint (for example infura link with apikey) and boolean value for telling the function to read also all reward history (default is false).
 
 ```
 const delegatorInfo = await getDelegator(
+  '0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA',
+  ethereumEndpoint
+);
+```  
+Or
+```
+const delegatorAndRewardsInfo = await getDelegator(
+  '0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA',
+  ethereumEndpoint, true
+);
+```  
+
+* getDelegatorStakingRewards
+
+Used to query information about delegator's staking rewards history & claim action history. Funciton's input is the requested delegator's address, an Ethereum endpoint (for example infura link with apikey).
+
+```
+const { rewards, claimActions } = await getDelegatorStakingRewards(
   '0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA',
   ethereumEndpoint
 );
@@ -32,13 +50,30 @@ const guardians = await getGuardians(nodeEndpoints);
 
 * getGuardian
 
-Used to query a guardian's staking and delegator history, rewards history and list all current delegators. Function's input is the requested guardian's address and an Ethereum endpoint (for example infura link with apikey).
+Used to query a guardian's staking and delegator history, list all current delegators and optional rewards history and . Function's input is the requested guardian's address, an Ethereum endpoint (for example infura link with apikey), and boolean value for telling the function to read also all reward history (default is false).
 ```
 const guardianInfo = await getGuardian(
   '0xf7ae622c77d0580f02bcb2f92380d61e3f6e466c',
   ethereumEndpoint
 );
 ```
+Or 
+```
+const guardianAndRewardsInfo = await getGuardian(
+  '0xf7ae622c77d0580f02bcb2f92380d61e3f6e466c',
+  ethereumEndpoint, true
+);
+```
+
+* getGuardianStakingRewards
+
+Used to query information about guardian's staking rewards history (both as guardian and as self-delegator) & claim action history. Funciton's input is the requested guardian's address, an Ethereum endpoint (for example infura link with apikey).
+```
+const { rewardsAsGuardian, rewardsAsDelegator, claimActions } = await getGuardianStakingRewards(
+  '0xf7ae622c77d0580f02bcb2f92380d61e3f6e466c',
+  ethereumEndpoint
+);
+```  
 
 * getOverview
 

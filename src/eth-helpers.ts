@@ -17,7 +17,7 @@ import { delegationAbi } from './abis/delegation';
 import { guardianAbi } from './abis/guardian';
 import { rewardsAbi } from './abis/rewards';
 import { feeBootstrapRewardAbi } from './abis/feebootstrap';
-import { bigToNumber, getIpFromHex } from './helpers';
+import { bigToNumber, DECIMALS, getIpFromHex } from './helpers';
 import { registryAbi } from './abis/registry';
 
 const FirstPoSv2BlockNumber = 9830000;
@@ -32,6 +32,7 @@ export enum Topics {
     Delegated = '0x4bc154dd35d6a5cb9206482ecb473cdbf2473006d6bce728b9cc0741bcc59ea2',
     DelegateStakeChanged = '0x52db726bc1b1643b24886ed6f0194a41de9abac79d1c12108aca494e5b2bda6b',
 
+    StakingRewardAllocated = '0x5830b366dc4564bf14d32116f14c979ac2c150a96b7c6b99bea717e6990d56ba',
     DelegatorRewardAssigned = '0x411edbca4a882d6fbf12b557451a9358a63f73e3011a8c712885cb1e207120dd',
     GuardianRewardAssigned = '0x3880098574881d40bf7b9775086fdc9e6d6edac939d881add769581473c84b45',
     StakingRewardsClaimed = '0x5f51e0cd4567b63928e199868f571929625ded3459b724759a0eb8edbf94158b',
@@ -176,14 +177,29 @@ export async function readDelegatorDataFromState(address:string, blockNumber: nu
         currentRewardContract.methods.getDelegatorStakingRewardsData(address).call({}, blockNumber),
     ];
     const res = await Promise.all(txs);
-    return  {
+    const guardian = String(res[3].guardian).toLowerCase();
+    const reward_balance = new BigNumber(res[3].balance);
+    const reward_claimed = new BigNumber(res[3].claimed);
+    const guardianRes = await currentRewardContract.methods.getGuardianStakingRewardsData(guardian).call({}, blockNumber);
+    const staked = new BigNumber(res[1]);
+    const deltaRPT = new BigNumber(res[3].delegatorRewardsPerTokenDelta); 
+    return {
+        blockNumber,
         non_stake: bigToNumber(new BigNumber(res[0])),
-        staked: bigToNumber(new BigNumber(res[1])),
+        staked: bigToNumber(staked),
         cooldown_stake: bigToNumber(new BigNumber(res[2].cooldownAmount)),
         current_cooldown_time: new BigNumber(res[2].cooldownEndTime).toNumber(),
-        reward_balance: new BigNumber(res[3].balance), 
-        reward_claimed: new BigNumber(res[3].claimed), 
-        guardian: String(res[3].guardian)
+        reward_balance,
+        reward_claimed,
+        total_rewards: reward_balance.plus(reward_claimed),
+        last_awarded: staked.multipliedBy(deltaRPT).dividedBy(DECIMALS),
+        RPT: new BigNumber(res[3].lastDelegatorRewardsPerToken),
+        delta_RPT: deltaRPT,
+        guardian,
+        guardian_delta_RPW: new BigNumber(guardianRes.stakingRewardsPerWeightDelta),
+        guardian_RPW: new BigNumber(guardianRes.lastStakingRewardsPerWeight),
+        guardian_delta_RPT: new BigNumber(guardianRes.delegatorRewardsPerTokenDelta),
+        guardian_RPT: new BigNumber(guardianRes.delegatorRewardsPerToken),
     };
 }
 
@@ -218,9 +234,11 @@ export async function readGuardianDataFromState(address:string, blockNumber: num
     const withdrawnFees = new BigNumber(res[9].withdrawnFees);
     const bootstrapBalance = new BigNumber(res[9].bootstrapBalance);
     const withdrawnBootstrap = new BigNumber(res[9].withdrawnBootstrap);
-
+    const delegatorDeltaRPT = new BigNumber(res[7].delegatorRewardsPerTokenDelta);
 
     return  {
+        blockNumber,
+        guardian: address.toLowerCase(), // important
         details: {
             name: String(res[0].name),
             website: String(res[0].website),
@@ -252,6 +270,17 @@ export async function readGuardianDataFromState(address:string, blockNumber: num
             bootstrap_claimed: bigToNumber(withdrawnBootstrap),
             total_bootstrap: bigToNumber(bootstrapBalance.plus(withdrawnBootstrap)),
             delegator_reward_share: new BigNumber(res[8]).toNumber() / 100000     
+        }, 
+        rewards_extra: {
+            total_awarded: balanceAsGuardian.plus(claimedAsGuardian),
+            total_awarded_delegator: balanceAsDelegator.plus(claimedAsDelegator),
+            last_awarded_delegator: self_stake.multipliedBy(delegatorDeltaRPT).dividedBy(DECIMALS),
+            delta_RPW: new BigNumber(res[6].stakingRewardsPerWeightDelta),
+            RPW: new BigNumber(res[6].lastStakingRewardsPerWeight),
+            delta_RPT: new BigNumber(res[6].delegatorRewardsPerTokenDelta),
+            RPT: new BigNumber(res[6].delegatorRewardsPerToken),
+            delegator_delta_RPT: delegatorDeltaRPT,
+            delegator_RPT: new BigNumber(res[7].lastDelegatorRewardsPerToken),
         }
     };
 }
@@ -260,11 +289,11 @@ export function addressToTopic(address:string) {
     return '0x000000000000000000000000' + address.substr(2).toLowerCase();
 }
 
-export async function readContractEvents(filter: (string[] | string | undefined)[], contractsType:Contracts, web3:Web3) {
+export async function readContractEvents(filter: (string[] | string | undefined)[], contractsType:Contracts, web3:Web3, fromBlock:number = FirstPoSv2BlockNumber, toBlock:number|string = 'latest') {
     const contracts = getPoSContracts(web3, contractsType);
     const allEvents = [];
     for(const contract of contracts) {
-        const events = await readEvents(filter, contract, web3, FirstPoSv2BlockNumber, 'latest', 100000);
+        const events = await readEvents(filter, contract, web3, fromBlock, toBlock, 100000);
         allEvents.push(...events);
     }
     return allEvents;
@@ -328,7 +357,6 @@ async function readRegisteryEvents(contractsData:ContractsData, regContract:any,
 
 // Note new Contract leaks this is code for client side only 
 export function getLatestPoSContract(web3:any, contract: Contracts) {
-    const contracts = [];
     const current = web3.contractsData[contract][web3.contractsData[contract].length-1];
     return new web3.eth.Contract(current.abi, current.address);
 }
@@ -373,6 +401,21 @@ export function ascendingEvents(e1:any, e2:any) {
         return e1.transactionIndex - e2.transactionIndex
     }
     return e1.logIndex - e2.logIndex;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function descendingEvents(e1:any, e2:any) {
+    if (e1.blockNumber !== e2.blockNumber) {
+        return e2.blockNumber - e1.blockNumber;
+    } else if (e1.transactionIndex !== e2.transactionIndex) {
+        return e2.transactionIndex - e1.transactionIndex
+    }
+    return e2.logIndex - e1.logIndex;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function descendingBlockNumbers(e1:any, e2:any) {
+    return e2.blockNumber - e1.blockNumber;
 }
 
 export function generateTxLink(txHash: string): string {
