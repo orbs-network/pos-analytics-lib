@@ -6,6 +6,13 @@
  * The above notice should be included in all copies or substantial portions of the software.
  */
 
+export interface PosOptions {
+    read_stake: boolean;
+    read_stake_from: number;
+    read_rewards: boolean;
+    read_rewards_from: number;
+}
+
 export interface PosOverview {
     block_number: number;
     block_time: number;

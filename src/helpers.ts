@@ -6,9 +6,12 @@
  * The above notice should be included in all copies or substantial portions of the software.
  */
 
+import _ from 'lodash';
 import BigNumber from 'bignumber.js';
 import fetch from 'node-fetch';
 import { retry } from 'ts-retry-promise';
+import { PosOptions } from './model';
+import { getStartOfPoSBlock, getStartOfRewardsBlock } from './eth-helpers';
 
 export const DECIMALS = '1e18';
 export function bigToNumber(n: BigNumber):number {
@@ -50,4 +53,27 @@ function byte(value: number, byteIdx: number) {
 export function getIpFromHex(ipStr: string): string {
   const ipBytes = Number(ipStr);
   return byte(ipBytes, 3) + '.' + byte(ipBytes, 2) + '.' + byte(ipBytes, 1) + '.' + byte(ipBytes, 0);
+}
+
+export function parseOptions(input?: any): PosOptions {
+  const read_stake = true;
+  const read_stake_from = getStartOfPoSBlock().number;
+  const read_rewards = new Boolean(input?.read_rewards).valueOf();
+  const read_rewards_from = parseNumber(getStartOfRewardsBlock().number, input?.read_rewards_from);
+
+  return {
+    read_stake,
+    read_stake_from,
+    read_rewards,
+    read_rewards_from,
+  };
+}
+
+function parseNumber(defaultValue: number, input?: any): number {
+  if (!_.isNumber(input)) {
+    return defaultValue;
+  } else {
+    const r = new Number(input).valueOf();
+    return  ( r === 0 || r === -1) ? defaultValue : r
+  }
 }

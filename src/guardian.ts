@@ -8,9 +8,9 @@
 
 import _ from 'lodash';
 import BigNumber from 'bignumber.js';
-import { fetchJson, bigToNumber } from './helpers';
-import { addressToTopic, ascendingEvents, BlockInfo, Contracts, getBlockEstimatedTime, generateTxLink, getWeb3, readBalances, readContractEvents, readGuardianDataFromState, Topics, getStartOfRewardsBlock, getStartOfPoSBlock, getFirstDelegationBlock } from "./eth-helpers";
-import { Guardian, GuardianInfo, GuardianDelegator, GuardianReward, GuardianStake, GuardianAction, GuardianRewardStatus, GuardianStakeStatus, DelegatorReward } from './model';
+import { fetchJson, bigToNumber, parseOptions } from './helpers';
+import { addressToTopic, ascendingEvents, BlockInfo, Contracts, getBlockEstimatedTime, generateTxLink, getWeb3, readBalances, readContractEvents, readGuardianDataFromState, Topics, getStartOfRewardsBlock, getStartOfPoSBlock, getStartOfDelegationBlock } from "./eth-helpers";
+import { Guardian, GuardianInfo, GuardianDelegator, GuardianReward, GuardianStake, GuardianAction, GuardianRewardStatus, GuardianStakeStatus, DelegatorReward, PosOptions } from './model';
 import { getGuardianRewardsStakingInternal, getRewardsClaimActions } from './rewards';
 
 export async function getGuardians(networkNodeUrls: string[]): Promise<Guardian[]> {
@@ -35,23 +35,24 @@ export async function getGuardians(networkNodeUrls: string[]): Promise<Guardian[
     throw new Error(`Error while creating list of Guardians, all Netowrk Node URL failed to respond. ${fullError}`);
 }
 
-export async function getGuardian(address: string, ethereumEndpoint: string, full: boolean = false): Promise<GuardianInfo> {
+export async function getGuardian(address: string, ethereumEndpoint: string, o?: PosOptions | any): Promise<GuardianInfo> {
+    const options = parseOptions(o);
     const actions: GuardianAction[] = [];
     const stakes: GuardianStake[] = [];
     let rewardsAsGuardian: GuardianReward[] = [];
     let rewardsAsDelegator: DelegatorReward[] = [];
 
-    const {block, web3} = await getWeb3(ethereumEndpoint);
+    const web3 = await getWeb3(ethereumEndpoint);
     
     let ethData: any;
     let txs: Promise<any>[];
-    if (full) {
-        ethData = await readGuardianDataFromState(address, block.number, web3);
+    if (options.read_rewards) {
+        ethData = await readGuardianDataFromState(address, web3);
         txs = [
             getGuardianStakeAndDelegationChanges(address, web3),
             getGuardianStakeActions(address, web3),
             getGuardianRegisterationActions(address, web3),
-            getGuardianRewardsStakingInternal(address, ethData, web3),
+            getGuardianRewardsStakingInternal(address, ethData, web3, options),
             getGuardianFeeAndBootstrap(address, web3),
         ];
     } else {
@@ -61,7 +62,7 @@ export async function getGuardian(address: string, ethereumEndpoint: string, ful
             getGuardianRegisterationActions(address, web3),
             getRewardsClaimActions(address, web3, true),
             getGuardianFeeAndBootstrap(address, web3),
-            readGuardianDataFromState(address, block.number, web3)
+            readGuardianDataFromState(address, web3)
         ];
     }
     const res = await Promise.all(txs);
@@ -76,7 +77,7 @@ export async function getGuardian(address: string, ethereumEndpoint: string, ful
     const bootstrapRewards = res[4].bootstraps;
     const feeRewards = res[4].fees;
     actions.push(...res[4].withdrawActions);
-    if (full) {
+    if (options.read_rewards) {
         rewardsAsGuardian = res[3].rewardsAsGuardian;
         rewardsAsDelegator = res[3].rewardsAsDelegator;
     } else {
@@ -87,16 +88,16 @@ export async function getGuardian(address: string, ethereumEndpoint: string, ful
     stakes.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc before delegation unlikely in same block. after delegation we filter same block
 
     // add "now" values to lists
-    injectFirstLastStakes(stakes, ethData.stake_status, block);
-    injectFirstLastRewards(bootstrapRewards, feeRewards, ethData.reward_status, block); 
+    injectFirstLastStakes(stakes, ethData.stake_status, ethData.block);
+    injectFirstLastRewards(bootstrapRewards, feeRewards, ethData.reward_status, ethData.block); 
     
     const delegators = _.map(_.pickBy(delegatorMap, (d) => {return d.stake !== 0}), v => v).sort((n1:any, n2:any) => n2.stake - n1.stake);
     const delegators_left = _.map(_.pickBy(delegatorMap, (d) => {return d.stake === 0}), v => v);
 
     return {
         address: address.toLowerCase(),
-        block_number: block.number,
-        block_time: block.time,
+        block_number: ethData.block.number,
+        block_time: ethData.block.time,
         details : ethData.details,
         stake_status: ethData.stake_status,
         reward_status: ethData.reward_status,
@@ -186,7 +187,7 @@ export async function getGuardianStakeActions(address: string, web3:any) {
     const events = await readContractEvents(filter, Contracts.Stake, web3);
 
     let totalStake = new BigNumber(0);
-    const firstDelegationBlock = getFirstDelegationBlock();
+    const firstDelegationBlock = getStartOfDelegationBlock();
     const stakesBeforeDelegation: GuardianStake[] = [];
     const stakeActions: GuardianAction[] = [];    
     for (let event of events) {

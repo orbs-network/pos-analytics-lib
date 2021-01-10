@@ -81,16 +81,12 @@ export async function getWeb3(ethereumEndpoint: string, readContracts:boolean = 
     contractsData[Contracts.Stake] = [{address: '0x01D59Af68E2dcb44e04C50e05F62E7043F2656C3', startBlock: FirstPoSv2BlockNumber, endBlock: 'latest', abi: stakeAbi}];
     contractsData[Contracts.Registry] = [{address: '0xD859701C81119aB12A1e62AF6270aD2AE05c7AB3', startBlock: 11191400, endBlock: 'latest', abi: registryAbi /*getAbiByContractName(Contracts.Registry)*/ }];
     
-    const txs: Promise<any>[] = [
-        getCurrentBlockInfo(web3),
-    ]
     if (readContracts) {
-        txs.push(readContractsAddresses(contractsData, web3));
+        await readContractsAddresses(contractsData, web3)
+        Object.assign(web3, {contractsData});
     }
-    const res = await Promise.all(txs); 
 
-    Object.assign(web3, {contractsData});
-    return { block: res[0], web3 };
+    return web3;
 }
 
 async function readContractsAddresses(contractsData: ContractsData, web3:any) {
@@ -133,8 +129,16 @@ export function getStartOfRewardsBlock(): BlockInfo {
     return {number: 11145373, time: 1603891336 };
 }
 
-export function getFirstDelegationBlock(): BlockInfo {
+export function getStartOfDelegationBlock(): BlockInfo {
     return {number: 11180000, time: 1604308068 };
+}
+
+const CURRENT_BLOCK_TIMESTAMP = 'CURRENT_BLOCK_TIMESTAMP';
+function multicallToBlockInfo(multiCallRes: any): BlockInfo {
+    return {
+        number: multiCallRes.results.blockNumber.toNumber(), 
+        time: multiCallRes.results.transformed[CURRENT_BLOCK_TIMESTAMP].toNumber()
+    };
 }
 
 // Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
@@ -155,47 +159,98 @@ export async function readBalances(addresses:string[], web3:any) {
     return r.results.transformed;
 }
 
-export async function readOverviewDataFromState(blockNumber: number, web3:any) {
-    const currentStakeContract = getLatestPoSContract(web3, Contracts.Stake);
-    const currentDelegateContract = getLatestPoSContract(web3, Contracts.Delegate);
-    const txs = [
-        currentStakeContract.methods.getTotalStakedTokens().call({}, blockNumber),
-        currentDelegateContract.methods.uncappedDelegatedStake('0xffffffffffffffffffffffffffffffffffffffff').call({}, blockNumber),
+// Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
+export async function readOverviewDataFromState(web3:any) {
+    const config = { web3, multicallAddress: MulticallContractAddress};
+    const delegateAddress = getLatestPoSContractAddress(web3, Contracts.Delegate);
+    const stakeAddress = getLatestPoSContractAddress(web3, Contracts.Stake);
+    const calls: any[] = [
+        {
+           target: delegateAddress, 
+           call: ['uncappedDelegatedStake(address)(uint256)', '0xffffffffffffffffffffffffffffffffffffffff'],
+           returns: [['uncapped', (v: BigNumber.Value) => new BigNumber(v)]]
+        },
+        {
+             target: stakeAddress, 
+             call: ['getTotalStakedTokens()(uint256)'],
+             returns: [['staked', (v: BigNumber.Value) => new BigNumber(v)]]
+        },
+        {
+            call: ['getCurrentBlockTimestamp()(uint256)'],
+            returns: [[CURRENT_BLOCK_TIMESTAMP]]
+        },
     ];
-    const res = await Promise.all(txs);
-    return bigToNumber(new BigNumber(res[0]).minus(new BigNumber(res[1])));
+
+    const r = await aggregate(calls, config);
+    return { block: multicallToBlockInfo(r),
+             totalStake: bigToNumber(r.results.transformed['staked'].minus(r.results.transformed['uncapped']))};
 }
 
-export async function readDelegatorDataFromState(address:string, blockNumber: number, web3:any) {
-    const currentErc20Contract = getLatestPoSContract(web3, Contracts.Erc20);
-    const currentStakeContract = getLatestPoSContract(web3, Contracts.Stake);
-    const currentRewardContract = getLatestPoSContract(web3, Contracts.Reward);
-    const txs = [
-        currentErc20Contract.methods.balanceOf(address).call({}, blockNumber),
-        currentStakeContract.methods.getStakeBalanceOf(address).call({}, blockNumber),
-        currentStakeContract.methods.getUnstakeStatus(address).call({}, blockNumber),
-        currentRewardContract.methods.getDelegatorStakingRewardsData(address).call({}, blockNumber),
+const balance = 'b', staked = 's', cooldownStake = 'cooldownStake', cooldownTime = 'cooldownTime';
+const dRewardBalance = 'dRewardBalance', dRewardClaim = 'dRewardClaim', dGuardian = 'dGuardian', dRPT = 'dRPT', dDeltaRPT = 'dDeltaRPT';
+// Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
+async function readDelegatorState(address:string, web3:any) {
+    const config = { web3, multicallAddress: MulticallContractAddress};
+    const erc20Address = getLatestPoSContractAddress(web3, Contracts.Erc20);
+    const stakeAddress = getLatestPoSContractAddress(web3, Contracts.Stake);
+    const rewardAddress = getLatestPoSContractAddress(web3, Contracts.Reward);
+    
+    const calls: any[] = [
+        {
+           target: erc20Address, 
+           call: ['balanceOf(address)(uint256)', address],
+           returns: [[balance, (v: BigNumber.Value) => new BigNumber(v)]]
+        },
+        {
+             target: stakeAddress, 
+             call: ['getStakeBalanceOf(address)(uint256)', address],
+             returns: [[staked, (v: BigNumber.Value) => new BigNumber(v)]]
+        },
+        {
+            target: stakeAddress, 
+            call: ['getUnstakeStatus(address)(uint256,uint256)', address],
+            returns: [
+                [cooldownStake, (v: BigNumber.Value) => new BigNumber(v)],
+                [cooldownTime, (v: BigNumber.Value) => new BigNumber(v)]
+            ]
+        },        
+        {
+            target: rewardAddress, 
+            call: ['getDelegatorStakingRewardsData(address)(uint256,uint256,address,uint256,uint256)', address],
+            returns: [
+                [dRewardBalance, (v: BigNumber.Value) => new BigNumber(v)],
+                [dRewardClaim, (v: BigNumber.Value) => new BigNumber(v)],
+                [dGuardian, (v: string) => v.toLowerCase()],
+                [dRPT, (v: BigNumber.Value) => new BigNumber(v)],
+                [dDeltaRPT, (v: BigNumber.Value) => new BigNumber(v)]
+               ]
+        },
+        {
+            call: ['getCurrentBlockTimestamp()(uint256)'],
+            returns: [[CURRENT_BLOCK_TIMESTAMP]]
+        }
     ];
-    const res = await Promise.all(txs);
-    const guardian = String(res[3].guardian).toLowerCase();
-    const reward_balance = new BigNumber(res[3].balance);
-    const reward_claimed = new BigNumber(res[3].claimed);
-    const guardianRes = await currentRewardContract.methods.getGuardianStakingRewardsData(guardian).call({}, blockNumber);
-    const staked = new BigNumber(res[1]);
-    const deltaRPT = new BigNumber(res[3].delegatorRewardsPerTokenDelta); 
+
+    const r = await aggregate(calls, config);
+    return { block: multicallToBlockInfo(r), data: r.results.transformed};
+}
+
+export async function readDelegatorDataFromState(address:string, web3:any) {
+    const {block, data} = await readDelegatorState(address, web3);
+    const guardianRes = await getLatestPoSContract(web3, Contracts.Reward).methods.getGuardianStakingRewardsData(data[dGuardian]).call({}, block.number);
     return {
-        blockNumber,
-        non_stake: bigToNumber(new BigNumber(res[0])),
-        staked: bigToNumber(staked),
-        cooldown_stake: bigToNumber(new BigNumber(res[2].cooldownAmount)),
-        current_cooldown_time: new BigNumber(res[2].cooldownEndTime).toNumber(),
-        reward_balance,
-        reward_claimed,
-        total_rewards: reward_balance.plus(reward_claimed),
-        last_awarded: staked.multipliedBy(deltaRPT).dividedBy(DECIMALS),
-        RPT: new BigNumber(res[3].lastDelegatorRewardsPerToken),
-        delta_RPT: deltaRPT,
-        guardian,
+        block,
+        non_stake: data[balance],
+        staked: data[staked],
+        cooldown_stake: data[cooldownStake],
+        current_cooldown_time: data[cooldownTime].toNumber(),
+        self_reward_balance: data[dRewardBalance],
+        self_reward_claimed: data[dRewardClaim],
+        self_total_rewards: data[dRewardBalance].plus(data[dRewardClaim]),
+        self_last_rewarded: data[staked].multipliedBy(data[dDeltaRPT]).dividedBy(DECIMALS),
+        delegator_RPT: data[dRPT],
+        delegator_delta_RPT: data[dDeltaRPT],
+        guardian: data[dGuardian],
         guardian_delta_RPW: new BigNumber(guardianRes.stakingRewardsPerWeightDelta),
         guardian_RPW: new BigNumber(guardianRes.lastStakingRewardsPerWeight),
         guardian_delta_RPT: new BigNumber(guardianRes.delegatorRewardsPerTokenDelta),
@@ -203,85 +258,167 @@ export async function readDelegatorDataFromState(address:string, blockNumber: nu
     };
 }
 
-export async function readGuardianDataFromState(address:string, blockNumber: number, web3:any) {
-    const currentGuardianContract = getLatestPoSContract(web3, Contracts.Guardian);
-    const currentErc20Contract = getLatestPoSContract(web3, Contracts.Erc20);
-    const currentStakeContract = getLatestPoSContract(web3, Contracts.Stake);
-    const currentDelegateContract = getLatestPoSContract(web3, Contracts.Delegate);
-    const currentRewardContract = getLatestPoSContract(web3, Contracts.Reward);
-    const feeBootstrapRewardContract = getLatestPoSContract(web3, Contracts.FeeBootstrapReward);
-    const txs = [
-        currentGuardianContract.methods.getGuardianData(address).call({}, blockNumber),
-        currentGuardianContract.methods.getMetadata(address, 'ID_FORM_URL').call({}, blockNumber),
-        currentErc20Contract.methods.balanceOf(address).call({}, blockNumber),
-        currentStakeContract.methods.getStakeBalanceOf(address).call({}, blockNumber),
-        currentStakeContract.methods.getUnstakeStatus(address).call({}, blockNumber),
-        currentDelegateContract.methods.getDelegatedStake(address).call({}, blockNumber),
-        currentRewardContract.methods.getGuardianStakingRewardsData(address).call({}, blockNumber),
-        currentRewardContract.methods.getDelegatorStakingRewardsData(address).call({}, blockNumber),
-        currentRewardContract.methods.getGuardianDelegatorsStakingRewardsPercentMille(address).call({}, blockNumber),
-        feeBootstrapRewardContract.methods.getFeesAndBootstrapData(address).call({}, blockNumber),
+const gIp = 'ip', gName = 'name', gWebsite = 'website', gOrbsAddr = 'orbsaddress', gRegTime = 'gRegTime', gUpdateTime = 'gUpdateTime', gUrl = 'gUrl', gDelegateStake = 'gDelegateStake';
+const gRewardBalance = 'gRewardBalance', gRewardClaim = 'gRewardClaim', gLastRewardBalance = 'gLastRewardBalance', gLastRewardClaim = 'gLastRewardClaim', gRPW = 'gRPW', gDeltaRPW = 'gDeltaRPW', gRPT = 'gRPT', gDeltaRPT = 'gDeltaRPT', gRewardPrecent = 'gRewardPrecent';
+const gFeeBalance = 'gFeeBalance', gFeeWithdraw = 'gFeeWithdraw', gBootBalance = 'gBootBalance', gBootWithdraw = 'gBootWithdraw', gCertified = 'gCertified';
+// Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
+async function readGuardianState(address:string, web3:any) {
+    const config = { web3, multicallAddress: MulticallContractAddress};
+    const erc20Address = getLatestPoSContractAddress(web3, Contracts.Erc20);
+    const stakeAddress = getLatestPoSContractAddress(web3, Contracts.Stake);
+    const rewardAddress = getLatestPoSContractAddress(web3, Contracts.Reward);
+    const guardianContracAddress = getLatestPoSContractAddress(web3, Contracts.Guardian);
+    const delegateAddress = getLatestPoSContractAddress(web3, Contracts.Delegate);
+    const feeBootstrapAddress = getLatestPoSContractAddress(web3, Contracts.FeeBootstrapReward);
+    
+    const calls: any[] = [
+        {
+           target: erc20Address, 
+           call: ['balanceOf(address)(uint256)', address],
+           returns: [[balance, (v: BigNumber.Value) => new BigNumber(v)]]
+        },
+        {
+            target: stakeAddress, 
+            call: ['getStakeBalanceOf(address)(uint256)', address],
+            returns: [[staked, (v: BigNumber.Value) => new BigNumber(v)]]
+        },
+        {
+            target: stakeAddress, 
+            call: ['getUnstakeStatus(address)(uint256,uint256)', address],
+            returns: [
+                [cooldownStake, (v: BigNumber.Value) => new BigNumber(v)],
+                [cooldownTime, (v: BigNumber.Value) => new BigNumber(v)]
+            ]
+        },        
+        {
+            target: rewardAddress, 
+            call: ['getDelegatorStakingRewardsData(address)(uint256,uint256,address,uint256,uint256)', address],
+            returns: [
+                [dRewardBalance, (v: BigNumber.Value) => new BigNumber(v)],
+                [dRewardClaim, (v: BigNumber.Value) => new BigNumber(v)],
+                [dGuardian, (v: string) => v.toLowerCase()],
+                [dRPT, (v: BigNumber.Value) => new BigNumber(v)],
+                [dDeltaRPT, (v: BigNumber.Value) => new BigNumber(v)]
+               ]
+        },
+        {
+            target: rewardAddress, 
+            call: ['getGuardianStakingRewardsData(address)(uint256,uint256,uint256,uint256,uint256,uint256)', address],
+            returns: [
+                [gRewardBalance, (v: BigNumber.Value) => new BigNumber(v)],
+                [gRewardClaim, (v: BigNumber.Value) => new BigNumber(v)],
+                [gRPT, (v: BigNumber.Value) => new BigNumber(v)],
+                [gDeltaRPT, (v: BigNumber.Value) => new BigNumber(v)],
+                [gRPW, (v: BigNumber.Value) => new BigNumber(v)],
+                [gDeltaRPW, (v: BigNumber.Value) => new BigNumber(v)]
+               ]
+        },
+        {
+            target: rewardAddress, 
+            call: ['getGuardianDelegatorsStakingRewardsPercentMille(address)(uint256)', address],
+            returns: [[gRewardPrecent, (v: BigNumber.Value) => new BigNumber(v)]]
+        },
+        {
+            target: rewardAddress, 
+            call: ['guardiansStakingRewards(address)(uint96,uint96,uint96,uint96)', address],
+            returns: [[],[],
+               [gLastRewardBalance, (v: BigNumber.Value) => new BigNumber(v)],
+               [gLastRewardClaim, (v: BigNumber.Value) => new BigNumber(v)]
+        ]
+        },
+        {
+            target: delegateAddress, 
+            call: ['getDelegatedStake(address)(uint256)', address],
+            returns: [[gDelegateStake, (v: BigNumber.Value) => new BigNumber(v)]]
+        },
+        {
+            target: feeBootstrapAddress, 
+            call: ['getFeesAndBootstrapData(address)(uint256,uint256,uint256,uint256,uint256,uint256,bool)', address],
+            returns: [
+                [gFeeBalance, (v: BigNumber.Value) => new BigNumber(v)],
+                [],
+                [gBootBalance, (v: BigNumber.Value) => new BigNumber(v)],
+                [],
+                [gFeeWithdraw, (v: BigNumber.Value) => new BigNumber(v)],
+                [gBootWithdraw, (v: BigNumber.Value) => new BigNumber(v)],
+                [gCertified]
+               ]
+        },
+        {
+            target: guardianContracAddress, 
+            call: ['getMetadata(address,string)(string)', address, 'ID_FORM_URL'],
+            returns: [[gUrl]]
+        },
+        {
+            target: guardianContracAddress, 
+            call: ['getGuardianData(address)(bytes4,address,string,string,uint,uint)', address],
+            returns: [
+                [gIp, (v: string) => getIpFromHex(v)],
+                [gOrbsAddr, (v: string) => v.toLowerCase()],
+                [gName], [gWebsite], 
+                [gRegTime, (v: BigNumber.Value) => new BigNumber(v)],
+                [gUpdateTime, (v: BigNumber.Value) => new BigNumber(v)]
+               ]
+        },
+        {
+            call: ['getCurrentBlockTimestamp()(uint256)'],
+            returns: [[CURRENT_BLOCK_TIMESTAMP]]
+        }
     ];
-    const res = await Promise.all(txs);
 
-    const self_stake = new BigNumber(res[3]);
-    const total_stake = new BigNumber(res[5]);
-    const balanceAsGuardian = new BigNumber(res[6].balance);
-    const claimedAsGuardian = new BigNumber(res[6].claimed);
-    const balanceAsDelegator = new BigNumber(res[7].balance);
-    const claimedAsDelegator = new BigNumber(res[7].claimed);
-    const feeBalance = new BigNumber(res[9].feeBalance);
-    const withdrawnFees = new BigNumber(res[9].withdrawnFees);
-    const bootstrapBalance = new BigNumber(res[9].bootstrapBalance);
-    const withdrawnBootstrap = new BigNumber(res[9].withdrawnBootstrap);
-    const delegatorDeltaRPT = new BigNumber(res[7].delegatorRewardsPerTokenDelta);
+    const r = await aggregate(calls, config);
+    return { block: multicallToBlockInfo(r), data: r.results.transformed};
+}
 
+export async function readGuardianDataFromState(address:string, web3:any) {
+    const {block, data} = await readGuardianState(address, web3);
     return  {
-        blockNumber,
-        guardian: address.toLowerCase(), // important
+        block,
         details: {
-            name: String(res[0].name),
-            website: String(res[0].website),
-            ip: getIpFromHex(res[0].ip),
-            node_address: String(res[0].orbsAddr).toLowerCase(),
-            registration_time: new BigNumber(res[0].registrationTime).toNumber(),
-            last_update_time: new BigNumber(res[0].lastUpdateTime).toNumber(),
-            details_URL: String(res[1]),
+            name: data[gName],
+            website: data[gWebsite],
+            ip: data[gIp],
+            node_address: data[gOrbsAddr],
+            registration_time: data[gRegTime].toNumber(),
+            last_update_time: data[gUpdateTime].toNumber(),
+            details_URL: data[gUrl],
+            certified: data[gCertified]
         },
         stake_status: {
-            self_stake: bigToNumber(self_stake),
-            cooldown_stake: bigToNumber(new BigNumber(res[4].cooldownAmount)),
-            current_cooldown_time: new BigNumber(res[4].cooldownEndTime).toNumber(),
-            non_stake: bigToNumber(new BigNumber(res[2])),
-            delegated_stake: bigToNumber(total_stake.minus(self_stake)),
-            total_stake: bigToNumber(total_stake),
+            self_stake: bigToNumber(data[staked]),
+            cooldown_stake: bigToNumber(data[cooldownStake]),
+            current_cooldown_time: data[cooldownTime].toNumber(),
+            non_stake: bigToNumber(data[balance]),
+            delegated_stake: bigToNumber(data[gDelegateStake].minus(data[staked])),
+            total_stake: bigToNumber(data[gDelegateStake]),
         },
         reward_status: {
-            guardian_rewards_balance: bigToNumber(balanceAsGuardian), 
-            guardian_rewards_claimed: bigToNumber(claimedAsGuardian),
-            total_guardian_rewards: bigToNumber(balanceAsGuardian.plus(claimedAsGuardian)),
-            delegator_rewards_balance: bigToNumber(balanceAsDelegator), 
-            delegator_rewards_claimed: bigToNumber(claimedAsDelegator),
-            total_delegator_rewards: bigToNumber(balanceAsDelegator.plus(claimedAsDelegator)),
-            fees_balance: bigToNumber(feeBalance), 
-            fees_claimed: bigToNumber(withdrawnFees),
-            total_fees: bigToNumber(feeBalance.plus(withdrawnFees)),
-            bootstrap_balance: bigToNumber(bootstrapBalance), 
-            bootstrap_claimed: bigToNumber(withdrawnBootstrap),
-            total_bootstrap: bigToNumber(bootstrapBalance.plus(withdrawnBootstrap)),
-            delegator_reward_share: new BigNumber(res[8]).toNumber() / 100000     
+            guardian_rewards_balance: bigToNumber(data[gRewardBalance]), 
+            guardian_rewards_claimed: bigToNumber(data[gRewardClaim]),
+            total_guardian_rewards: bigToNumber(data[gRewardBalance].plus(data[gRewardClaim])),
+            delegator_rewards_balance: bigToNumber(data[dRewardBalance]), 
+            delegator_rewards_claimed: bigToNumber(data[dRewardClaim]),
+            total_delegator_rewards: bigToNumber(data[dRewardBalance].plus(data[dRewardClaim])),
+            fees_balance: bigToNumber(data[gFeeBalance]), 
+            fees_claimed: bigToNumber(data[gFeeWithdraw]),
+            total_fees: bigToNumber(data[gFeeBalance].plus(data[gFeeWithdraw])),
+            bootstrap_balance: bigToNumber(data[gBootBalance]), 
+            bootstrap_claimed: bigToNumber(data[gBootWithdraw]),
+            total_bootstrap: bigToNumber(data[gBootBalance].plus(data[gBootWithdraw])),
+            delegator_reward_share: data[gRewardPrecent].toNumber() / 100000     
         }, 
-        rewards_extra: {
-            total_awarded: balanceAsGuardian.plus(claimedAsGuardian),
-            total_awarded_delegator: balanceAsDelegator.plus(claimedAsDelegator),
-            last_awarded_delegator: self_stake.multipliedBy(delegatorDeltaRPT).dividedBy(DECIMALS),
-            delta_RPW: new BigNumber(res[6].stakingRewardsPerWeightDelta),
-            RPW: new BigNumber(res[6].lastStakingRewardsPerWeight),
-            delta_RPT: new BigNumber(res[6].delegatorRewardsPerTokenDelta),
-            RPT: new BigNumber(res[6].delegatorRewardsPerToken),
-            delegator_delta_RPT: delegatorDeltaRPT,
-            delegator_RPT: new BigNumber(res[7].lastDelegatorRewardsPerToken),
-        }
+        
+        total_rewards: data[gRewardBalance].plus(data[gRewardClaim]),
+        last_rewarded: data[gRewardBalance].plus(data[gRewardClaim]).minus(data[gLastRewardBalance]).minus(data[gLastRewardClaim]),
+        self_total_rewards: data[dRewardBalance].plus(data[dRewardClaim]),
+        self_last_rewarded: data[staked].multipliedBy(data[dDeltaRPT]).dividedBy(DECIMALS),
+        guardian: address.toLowerCase(),
+        guardian_delta_RPW: data[gDeltaRPW],
+        guardian_RPW: data[gRPW],
+        guardian_delta_RPT: data[gDeltaRPT],
+        guardian_RPT: data[gRPT],
+        delegator_delta_RPT: data[dDeltaRPT],
+        delegator_RPT: data[dRPT],
     };
 }
 
@@ -353,6 +490,10 @@ async function readRegisteryEvents(contractsData:ContractsData, regContract:any,
         }
     }
     return {nextRegContract: '', nextRegStartBlock: 0};
+}
+
+function getLatestPoSContractAddress(web3:any, contract: Contracts): string {
+    return web3.contractsData[contract][web3.contractsData[contract].length-1].address;
 }
 
 // Note new Contract leaks this is code for client side only 

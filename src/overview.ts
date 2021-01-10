@@ -63,8 +63,8 @@ async function parseRawData(data:any, ethereumEndpoint:string) : Promise<PosOver
     });
     slices.sort((n1:any, n2:any) => n2.block_time - n1.block_time); // desc
 
-    const {block, web3} = await getWeb3(ethereumEndpoint);
-    const totalStake = await readOverviewDataFromState(block.number, web3);
+    const web3 = await getWeb3(ethereumEndpoint);
+    const {block, totalStake} = await readOverviewDataFromState(web3);
     const apy = 4000;
     
     return {

@@ -21,7 +21,7 @@ async function x() {
     ];
 
     const totalTimeStart = Date.now();
-
+ 
     let s = Date.now();
     const delegatorInfo = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint);
     console.log(`fast delegator took ${(Date.now() - s) / 1000.0} seconds`);
@@ -30,10 +30,17 @@ async function x() {
     // console.log(toConsole(delegatorInfo));
 
     s = Date.now()
-    const delegatorFullInfo = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint, true);
+    const delegatorFullInfo = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint, {read_rewards: true});
     console.log(`full delegator took ${(Date.now() - s) / 1000.0} seconds`);
     const dFullfilepath = path.resolve(__dirname, `../data/delegator_full.json`);   
     fs.writeFileSync(dFullfilepath, toConsole(delegatorFullInfo));
+    // console.log(toConsole(delegatorFullInfo));
+
+    s = Date.now()
+    const delegatorOnly50Info = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint, {read_rewards: true, read_rewards_from: -50000});
+    console.log(`50k delegator took ${(Date.now() - s) / 1000.0} seconds`);
+    const dOnly50filepath = path.resolve(__dirname, `../data/delegator_only_50000.json`);   
+    fs.writeFileSync(dOnly50filepath, toConsole(delegatorOnly50Info));
     // console.log(toConsole(delegatorFullInfo));
 
     s = Date.now()
@@ -56,10 +63,17 @@ async function x() {
     //console.log(toConsole(guardianInfo));
 
     s = Date.now()
-    const guardianFullInfo = await getGuardian('0xc5e624d6824e626a6f14457810e794e4603cfee2', ethereumEndpoint, true);
+    const guardianFullInfo = await getGuardian('0xc5e624d6824e626a6f14457810e794e4603cfee2', ethereumEndpoint, {read_rewards: true});
     console.log(`full guardian took ${(Date.now() - s) / 1000.0} seconds`);
     const gFullfilepath = path.resolve(__dirname, `../data/guardian_full.json`);   
     fs.writeFileSync(gFullfilepath, toConsole(guardianFullInfo));
+    // console.log(toConsole(guardianFullInfo));
+
+    s = Date.now()
+    const guardianOnly50kInfo = await getGuardian('0xc5e624d6824e626a6f14457810e794e4603cfee2', ethereumEndpoint, {read_rewards: true, read_rewards_from: -50000});
+    console.log(`50k guardian took ${(Date.now() - s) / 1000.0} seconds`);
+    const gOnly50kfilepath = path.resolve(__dirname, `../data/guardian_only_50000.json`);   
+    fs.writeFileSync(gOnly50kfilepath, toConsole(guardianOnly50kInfo));
     // console.log(toConsole(guardianFullInfo));
 
     s = Date.now()
