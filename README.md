@@ -83,14 +83,79 @@ Used to get an overview of the ORBS network nodes (guardians) stakes and weight 
 const overview = await getOverview(nodeEndpoints, ethereumEndpoint);
 ```
 
+* getAllDelegators
+
+Used to get a map of all the delegators of the ORBS network (including guardians who are self-delegators)
+with their current staked and non-staked balances and the last block that they changed their delegation. 
+Function's input is an Ethereum endpoint.
+
+```
+const delegatorMap = await getAllDelegators(ethereumEndpoint);
+```
+
+### Helper Functions
+
+* delegatorToXlsx
+
+Used to translate the output of `getDelegator` to xlsx format. Input is delegatorInfo object and output-type
+which is one of "buffer" or "array" or "binary" or "string" or "base64" (depending what you want to do with the output).
+
+```
+const delegatorInfo = await getDelegator('0x1e9673315e0ada0db640c299ddd2a1d81d220180', ethereumEndpoint);
+const delegatorXlsx = delegatorToXlsx(delegatorInfo, 'buffer');
+fs.writeFileSync(path, delegatorXlsx);
+```
+
+* guardianToXlsx
+
+Used to translate the output of `getGuardian` to xlsx format. Input is guardianInfo object and output-type
+which is one of "buffer" or "array" or "binary" or "string" or "base64" (depending what you want to do with the output).
+
+```
+const guardianInfo = await getGuardian('0xc5e624d6824e626a6f14457810e794e4603cfee2', ethereumEndpoint);
+const guardianXlsx = guardianToXlsx(guardianInfo, 'buffer');
+fs.writeFileSync(path, guardianXlsx);
+```
+
+* allDelegatorsToXlsx
+
+Used to translate the output of `getAllDelegators` to xlsx format. Input is map of Delegators ({[key: string]: Delegator}) object and output-type
+which is one of "buffer" or "array" or "binary" or "string" or "base64" (depending what you want to do with the output).
+
+```
+const delegatorMap = await getAllDelegators(ethereumEndpoint)
+const delegatorsXlsx = allDelegatorsToXlsx(guardianInfo, 'buffer');
+fs.writeFileSync(path, delegatorsXlsx);
+```
+
 ### Inputs
 
 * Address - Ethereum address of delegator or guardian to test
 * EthereumEndpoit - Ethereum url for web3 http provider such as Infura (i.e: https://mainnet.infura.io/v3/<YOUR-INFURA-KEY>)
 * NodesEndpoint - a list of one or more ORBS node management status URLs (i.e: http://54.168.36.177/services/management-service/status), these will be queries in order and first one that answers is the one used.
+* options (for getDelegator & getGuardian only) - a modifier object. The default values are shown after each key:
+```
+{
+    read_stake: true,          
+    read_stake_from: 9830000,
+    read_rewards: false,
+    read_rewards_from: 11145373, 
+}
+```
+
+| Field               | Explanation          |
+| ------------------- | -------------------- |
+| `read_rewards`      | Read the historical changes (events) of all reward-event and generate the corresponding array of values.<br> Default is `false` | 
+| `read_rewards_from` | Start block of reading reward-events.<br>Possible Values: 0 - block number of contract deployment, positive - block to start from, negative - how many blocks back to start from (i.e. -500 = 500 block before 'latest')<br>Please note you cannot query events from blocks before first contract of the type was deployed.    |
 
 ### Outputs
 Please have a look at the [model.ts](src/model.ts) for the full output definisions. 
+
+### Contract Deployments Block Numbers
+* Orbs ERC20 - 740000
+* Staking Contract - 9830000
+* Delegation - 11180000
+* Rewards - 11145373
 
 ## Development
 

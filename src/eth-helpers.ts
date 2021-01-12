@@ -47,6 +47,7 @@ export enum Topics {
     GuardianUpdateMetaData = '0x1cf3d48eb5d849f59c9ee28edc1564cde8ca0e708ccaecf5416a48d3810c5657',
 }
 
+const MulticallContractAddress = '0xeefBa1e63905eF1D7ACbA5a8513c70307C1cE441';
 export enum Contracts {
     Erc20 = 'Erc20',
     Stake = 'Stake',
@@ -142,7 +143,6 @@ function multicallToBlockInfo(multiCallRes: any): BlockInfo {
 }
 
 // Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
-const MulticallContractAddress = '0xeefBa1e63905eF1D7ACbA5a8513c70307C1cE441'
 export async function readBalances(addresses:string[], web3:any) {
     const config = { web3, multicallAddress: MulticallContractAddress};
     const currentErc20Address = web3.contractsData[Contracts.Erc20][0].address;
@@ -152,6 +152,23 @@ export async function readBalances(addresses:string[], web3:any) {
         calls.push({
             target: currentErc20Address, 
             call: ['balanceOf(address)(uint256)', address],
+            returns: [[address, (v: BigNumber.Value) => bigToNumber(new BigNumber(v))]]
+        });
+    }
+    const r = await aggregate(calls, config);
+    return r.results.transformed;
+}
+
+// Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
+export async function readStakes(addresses:string[], web3:any) {
+    const config = { web3, multicallAddress: MulticallContractAddress};
+    const currentStakeAddress = web3.contractsData[Contracts.Stake][0].address;
+    const calls: any[] = [];
+
+    for (let address of addresses) {
+        calls.push({
+            target: currentStakeAddress, 
+            call: ['getStakeBalanceOf(address)(uint256)', address],
             returns: [[address, (v: BigNumber.Value) => bigToNumber(new BigNumber(v))]]
         });
     }

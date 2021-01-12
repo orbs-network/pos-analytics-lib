@@ -8,7 +8,8 @@
 
 export { getDelegator } from "./delegator";
 export { getGuardian, getGuardians } from "./guardian";
-export { getOverview } from "./overview";
+export { getAllDelegators, getOverview } from "./overview";
 export { getDelegatorStakingRewards, getGuardianStakingRewards } from "./rewards";
+export { allDelegatorsToXlsx, delegatorToXlsx, guardianToXlsx } from './xls'
 
 export * from "./model";

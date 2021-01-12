@@ -5,8 +5,9 @@ import dotenv from 'dotenv';
 
 import { getDelegator } from './delegator';
 import { getGuardian, getGuardians } from './guardian';
-import { getOverview } from './overview';
+import { getAllDelegators, getOverview } from './overview';
 import { getGuardianStakingRewards, getDelegatorStakingRewards } from './rewards';
+import { allDelegatorsToXlsx, delegatorToXlsx, guardianToXlsx } from './xls'
 dotenv.config();
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,6 +35,8 @@ async function x() {
     console.log(`full delegator took ${(Date.now() - s) / 1000.0} seconds`);
     const dFullfilepath = path.resolve(__dirname, `../data/delegator_full.json`);   
     fs.writeFileSync(dFullfilepath, toConsole(delegatorFullInfo));
+    const delegatorXlsx = delegatorToXlsx(delegatorFullInfo, 'buffer');
+    fs.writeFileSync(path.resolve(__dirname, `../data/delegator_full.xlsx`), delegatorXlsx);
     // console.log(toConsole(delegatorFullInfo));
 
     s = Date.now()
@@ -67,6 +70,8 @@ async function x() {
     console.log(`full guardian took ${(Date.now() - s) / 1000.0} seconds`);
     const gFullfilepath = path.resolve(__dirname, `../data/guardian_full.json`);   
     fs.writeFileSync(gFullfilepath, toConsole(guardianFullInfo));
+    const guardianXlsx = guardianToXlsx(guardianFullInfo, 'buffer');
+    fs.writeFileSync(path.resolve(__dirname, `../data/guardian_full.xlsx`), guardianXlsx);
     // console.log(toConsole(guardianFullInfo));
 
     s = Date.now()
@@ -87,6 +92,15 @@ async function x() {
     const filepath = path.resolve(__dirname, `../data/overview.json`);   
     fs.writeFileSync(filepath, toConsole(overview));
     // console.log(toConsole(overview));
+
+    s = Date.now()
+    const allDelegators = await getAllDelegators(ethereumEndpoint);
+    console.log(`all delegators took ${(Date.now() - s) / 1000.0} seconds`);
+    const allDelegatorsFilePath = path.resolve(__dirname, `../data/all_delegators.json`);   
+    fs.writeFileSync(allDelegatorsFilePath, toConsole(allDelegators));
+    const allDelegatorsXlsx = allDelegatorsToXlsx(allDelegators, 'buffer');
+    fs.writeFileSync(path.resolve(__dirname, `../data/all_delegators.xlsx`), allDelegatorsXlsx);
+    // // console.log(toConsole(allDelegators));
 
     console.log(`test took ${(Date.now() - totalTimeStart) / 1000.0} seconds`)
 }

@@ -10,12 +10,12 @@ import _ from 'lodash';
 import BigNumber from "bignumber.js";
 import { bigToNumber, parseOptions } from './helpers';
 import { addressToTopic, ascendingEvents, BlockInfo, Contracts, generateTxLink, getBlockEstimatedTime, getStartOfPoSBlock, getWeb3, readContractEvents, readDelegatorDataFromState, Topics } from "./eth-helpers";
-import { Delegator, DelegatorAction, DelegatorReward, DelegatorStake, PosOptions } from "./model";
+import { DelegatorInfo, DelegatorAction, DelegatorReward, DelegatorStake, PosOptions } from "./model";
 import { getDelegatorRewardsStakingInternal, getRewardsClaimActions } from './rewards';
 
-export async function getDelegator(address: string, etherumEndpoint: string, o?: PosOptions | any): Promise<Delegator> {
+export async function getDelegator(address: string, ethereumEndpoint: string, o?: PosOptions | any): Promise<DelegatorInfo> {
     const options = parseOptions(o);
-    const web3 = await getWeb3(etherumEndpoint);  
+    const web3 = await getWeb3(ethereumEndpoint);  
     const actions: DelegatorAction[] = [];
 
     let ethData: any;

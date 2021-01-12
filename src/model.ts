@@ -138,7 +138,11 @@ export interface GuardianDelegator {
     non_stake: number;
 }
 
-export interface Delegator {
+export interface Delegator extends GuardianDelegator {
+    delegated_to: string;
+}
+
+export interface DelegatorInfo {
     address: string;
     block_number: number;
     block_time: number;

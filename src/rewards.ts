@@ -374,8 +374,9 @@ interface DelegatorGuardianTransitions {
 }
 
 function getStateData(address: string, ethState:any, options: PosOptions, isGuardian: boolean): RewardStateData{
+    let startBlock = options.read_rewards_from > 0 ? options.read_rewards_from : ethState.block.number+options.read_rewards_from;
     return {
-        startBlockNumber: options.read_rewards_from > 0 ? options.read_rewards_from : ethState.block.number+options.read_rewards_from,
+        startBlockNumber: Math.min(startBlock, getStartOfRewardsBlock().number),
         endBlockNumber: ethState.block.number,
         isGuardian,
         // values "as delegator"
