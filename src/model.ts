@@ -6,6 +6,12 @@
  * The above notice should be included in all copies or substantial portions of the software.
  */
 
+export interface PosOptions {
+    read_history: boolean;
+    read_from_block: number;
+    read_rewards_disable: boolean;
+}
+
 export interface PosOverview {
     block_number: number;
     block_time: number;
@@ -32,25 +38,39 @@ export interface PosOverviewData {
     weight: number;
 }
 
+export interface Action {
+    contract: string;
+    event: string;
+    block_number: number;
+    block_time: number;
+    tx_hash: string;
+    additional_info_link: string;
+    amount?: number;
+    current_stake?: number;
+    to?: string;
+}
+
 export interface Guardian {
     name: string;
     address: string;
     website: string;
     effective_stake: number;
     ip: string;
+    certified: boolean;
 }
 
 export interface GuardianInfo {
     address: string;
     block_number: number;
     block_time: number;
+    read_from_block: number | string;
     details: GuardianDetails;
     stake_status: GuardianStakeStatus;
     reward_status: GuardianRewardStatus;
     stake_slices: GuardianStake[];
-    actions: GuardianAction[];
+    actions: Action[];
     reward_as_guardian_slices: GuardianReward[];
-    reward_as_delegator_slices: GuardianReward[];
+    reward_as_delegator_slices: DelegatorReward[];
     fees_slices: GuardianReward[];
     bootstrap_slices: GuardianReward[];
     delegators: GuardianDelegator[];
@@ -65,6 +85,7 @@ export interface GuardianDetails {
     details_URL: string;
     registration_time: number;
     last_update_time: number;
+    certified: boolean;
 }
 
 export interface GuardianStakeStatus {
@@ -101,24 +122,13 @@ export interface GuardianStake {
     n_delegates: number;
 }
 
-export interface GuardianAction {
-    contract: string;
-    event: string;
-    block_number: number;
-    block_time: number;
-    tx_hash: string;
-    additional_info_link: string;
-    amount?: number;
-    current_stake?: number;
-    to?: string;
-}
+export interface GuardianAction extends Action {}
 
 export interface GuardianReward {
     block_number: number;
     block_time: number;
     tx_hash: string;
     additional_info_link: string;
-    amount: number;
     total_awarded: number;
 }
 
@@ -130,10 +140,15 @@ export interface GuardianDelegator {
     non_stake: number;
 }
 
-export interface Delegator {
+export interface Delegator extends GuardianDelegator {
+    delegated_to: string;
+}
+
+export interface DelegatorInfo {
     address: string;
     block_number: number;
     block_time: number;
+    read_from_block: number | string;
     total_stake: number;
     cooldown_stake: number;
     current_cooldown_time: number;
@@ -143,7 +158,7 @@ export interface Delegator {
     rewards_claimed: number;
     total_rewards: number;
     stake_slices: DelegatorStake[];
-    actions: DelegatorAction[];
+    actions: Action[];
     reward_slices: DelegatorReward[];
 }
 
@@ -154,24 +169,8 @@ export interface DelegatorStake {
     cooldown: number;
 }
 
-export interface DelegatorAction {
-    contract: string;
-    event: string;
-    block_number: number;
-    block_time: number;
-    tx_hash: string;
-    additional_info_link?: string;
-    amount?: number;
-    current_stake?: number;
-    to?: string;
-}
+export interface DelegatorAction extends Action {}
 
-export interface DelegatorReward {
-    block_number: number;
-    block_time: number;
-    tx_hash: string;
-    additional_info_link: string;
-    amount: number;
-    total_awarded: number;
+export interface DelegatorReward extends GuardianReward {
     guardian_from: string;
 }

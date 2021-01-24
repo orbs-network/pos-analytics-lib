@@ -8,48 +8,53 @@
 
 import _ from 'lodash';
 import BigNumber from "bignumber.js";
-import { bigToNumber } from './helpers';
-import { addressToTopic, ascendingEvents, BlockInfo, Contracts, generateTxLink, getBlockEstimatedTime, getCurrentBlockInfo, getStartOfPoSBlock, getStartOfRewardsBlock, getWeb3, readContractEvents, readDelegatorDataFromState, Topics } from "./eth-helpers";
-import { Delegator, DelegatorAction, DelegatorReward, DelegatorStake } from "./model";
+import { bigToNumber, optionsStartFromText, parseOptions } from './helpers';
+import { addressToTopic, ascendingEvents, Contracts, generateTxLink, getBlockEstimatedTime, getQueryDelegationBlock, getQueryPosBlock, getStartOfPosBlock, getWeb3, readContractEvents, readDelegatorDataFromState, Topics } from "./eth-helpers";
+import { DelegatorInfo, DelegatorAction, DelegatorReward, DelegatorStake, PosOptions } from "./model";
+import { getDelegatorRewardsStakingInternal, getRewardsClaimActions } from './rewards';
 
-export async function getDelegator(address: string, etherumEndpoint: string): Promise<Delegator> {
-    const {block, web3} = await getWeb3(etherumEndpoint);  
+export async function getDelegator(address: string, ethereumEndpoint: string | any, o?: PosOptions | any): Promise<DelegatorInfo> {
+    const options = parseOptions(o);
+    const web3 = _.isString(ethereumEndpoint) ? await getWeb3(ethereumEndpoint) : ethereumEndpoint;  
     const actions: DelegatorAction[] = [];
+    let stakes: DelegatorStake[] = [];
+    let rewards: DelegatorReward[] = [];
 
-    const txs: Promise<any>[] = [
-        readDelegatorDataFromState(address, block.number, web3),
-        getStakeActions(address, web3),
-        getDelegateActions(address, web3),
-        getDelegatorRewards(address, web3),
-    ];
-
-    const res = await Promise.all(txs);
-
-     const ethData = res[0];
-    const stakes = res[1].stakes;
-    actions.push(...res[1].stakeActions);
-    actions.push(...res[2].delegateActions);
-    actions.push(...res[3].claimActions);
-    const rewards = res[3].rewards;
+    let ethData = await readDelegatorDataFromState(address, web3);
+    if (options.read_history) {
+        const txs: Promise<any>[] = [
+            getStakeActions(address, ethData, web3, options).then(res => {
+                stakes = res.stakes;
+                actions.push(...res.stakeActions);
+            }),
+            getDelegateActions(address, ethData, web3, options).then(res => {actions.push(...res.delegateActions)}),
+        ];
+        if(options.read_rewards_disable) {
+            txs.push(getRewardsClaimActions(address, ethData, web3, options, false).then(res => actions.push(...res.claimActions)));
+        } else {
+            txs.push(getDelegatorRewardsStakingInternal(address, ethData, web3, options).then(res =>{
+                actions.push(...res.claimActions);
+                rewards = res.rewards;
+            }));
+        }
+        await Promise.all(txs);
+    }
 
     actions.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc unlikely delegator actions in same block
-    rewards.sort((n1:any, n2:any) => n2.block_number - n1.block_number); // desc unlikely delegator rewards in same block
-
-    injectFirstLastStakes(stakes, ethData, block);
-    injectFirstLastRewards(rewards, ethData, block);
 
     return {
         address: address.toLowerCase(),
-        block_number: block.number,
-        block_time: block.time,
-        total_stake: ethData.staked,
-        cooldown_stake: ethData.cooldown_stake,
+        block_number: ethData.block.number,
+        block_time: ethData.block.time,
+        read_from_block: optionsStartFromText(options, ethData.block.number),
+        total_stake: bigToNumber(ethData.staked),
+        cooldown_stake: bigToNumber(ethData.cooldown_stake),
         current_cooldown_time: ethData.current_cooldown_time,
-        non_stake: ethData.non_stake,
+        non_stake: bigToNumber(ethData.non_stake),
         delegated_to: ethData.guardian,
-        rewards_balance: bigToNumber(ethData.reward_balance),
-        rewards_claimed: bigToNumber(ethData.reward_claimed),
-        total_rewards: bigToNumber(ethData.reward_balance.plus(ethData.reward_claimed)),
+        rewards_balance: bigToNumber(ethData.self_reward_balance),
+        rewards_claimed: bigToNumber(ethData.self_reward_claimed),
+        total_rewards: bigToNumber(ethData.self_total_rewards),
         stake_slices: stakes,
         actions, 
         reward_slices: rewards
@@ -57,14 +62,15 @@ export async function getDelegator(address: string, etherumEndpoint: string): Pr
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function getStakeActions(address:string, web3:any) {
+async function getStakeActions(address:string, ethState:any, web3:any, options: PosOptions) {
+    let startBlock = getQueryPosBlock(options.read_from_block, ethState.block.number);
     const filter = [undefined /*don't filter event type*/, addressToTopic(address)];
-    const events = await readContractEvents(filter, Contracts.Stake, web3);
+    const events = await readContractEvents(filter, Contracts.Stake, web3, startBlock);
     
     let totalStake = new BigNumber(0);
     let coolDownStake = new BigNumber(0);
     const stakeActions: DelegatorAction[] = [];
-    const stakes: DelegatorStake[] = [];
+    const stakes: DelegatorStake[] = [generateStakeAction(ethState.block.number, ethState.block.time, bigToNumber(ethState.staked), bigToNumber(ethState.cooldown_stake))];
     events.sort(ascendingEvents); 
     
     for (let event of events) {
@@ -98,40 +104,28 @@ export async function getStakeActions(address:string, web3:any) {
             amount: bigToNumber(amount),
             current_stake: bigToNumber(totalStake),
         });
-        stakes.push({
-            block_number: event.blockNumber,
-            block_time: blockTime,
-            stake: bigToNumber(totalStake),
-            cooldown: bigToNumber(coolDownStake),
-        });
+        stakes.push(generateStakeAction(event.blockNumber, blockTime, bigToNumber(totalStake), bigToNumber(coolDownStake)));
+    }
+
+    if (startBlock <= getStartOfPosBlock().number) {
+        // fake 'start' of events
+        stakes.push(generateStakeAction(getStartOfPosBlock().number, getStartOfPosBlock().time, 0, 0));
     }
 
     stakes.sort((n1:any, n2:any) => n2.block_number - n1.block_number);  // desc
 
-    return { stakes, stakeActions, totalStake, coolDownStake };
+    return { stakes, stakeActions };
+}
+
+function generateStakeAction(block_number: number, block_time: number, stake: number, cooldown: number) : DelegatorStake {
+    return { block_number, block_time, stake, cooldown }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function injectFirstLastStakes(stakes: DelegatorStake[], ethData:any, block:BlockInfo) {
-    stakes.unshift({ 
-        block_number: block.number,
-        block_time: block.time,
-        stake: ethData.staked,
-        cooldown: ethData.cooldown_stake,
-    });
-    const startOfPoS = getStartOfPoSBlock();
-    stakes.push({ 
-        block_number: startOfPoS.number,
-        block_time: startOfPoS.time,
-        stake: 0,
-        cooldown: 0,
-    });
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function getDelegateActions(address:string, web3:any) {
+async function getDelegateActions(address:string, ethState:any, web3:any, options: PosOptions) {
+    let startBlock = getQueryDelegationBlock(options.read_from_block, ethState.block.number);
     const filter = [Topics.Delegated, addressToTopic(address)];
-    const events = await readContractEvents(filter, Contracts.Delegate, web3);
+    const events = await readContractEvents(filter, Contracts.Delegate, web3, startBlock);
 
     const delegateActions: DelegatorAction[] = [];
     
@@ -148,62 +142,4 @@ export async function getDelegateActions(address:string, web3:any) {
     }
 
     return { delegateActions };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function getDelegatorRewards(address: string, web3:any) {
-    const rewards: DelegatorReward[] = [];
-    const claimActions: DelegatorAction[] = [];
-
-    const filter = [[Topics.DelegatorRewardAssigned, Topics.StakingRewardsClaimed], addressToTopic(address)];
-    const events = await readContractEvents(filter, Contracts.Reward, web3);
-    events.sort((n1:any, n2:any) => n2.block_number - n1.block_number);  // desc
-
-    for (let event of events) {
-        if (event.signature ===  Topics.DelegatorRewardAssigned) {
-            rewards.push({
-                block_number: event.blockNumber,
-                block_time: getBlockEstimatedTime(event.blockNumber),
-                tx_hash: event.transactionHash,
-                additional_info_link: generateTxLink(event.transactionHash),
-                amount: bigToNumber(new BigNumber(event.returnValues.amount)),
-                total_awarded: bigToNumber(new BigNumber(event.returnValues.totalAwarded)), 
-                guardian_from: String(event.returnValues.guardian).toLowerCase(),
-            });
-        } else if (event.signature ===  Topics.StakingRewardsClaimed) {
-            claimActions.push({
-                contract: event.address.toLowerCase(),
-                event: event.event,
-                block_number: event.blockNumber,
-                block_time: getBlockEstimatedTime(event.blockNumber),
-                tx_hash: event.transactionHash,
-                additional_info_link: generateTxLink(event.transactionHash),
-                amount: bigToNumber(new BigNumber(event.returnValues.claimedDelegatorRewards)),
-            });
-        }
-    }
-
-    return { rewards, claimActions };
-}
-
-function injectFirstLastRewards(rewards: DelegatorReward[], ethData:any, block: BlockInfo) {
-    rewards.unshift({
-        block_number: block.number,
-        block_time: block.time,
-        tx_hash: '',
-        additional_info_link: '',
-        amount: bigToNumber(ethData.reward_balance),
-        total_awarded: bigToNumber(ethData.reward_balance.plus(ethData.reward_claimed)), 
-        guardian_from: ethData.guardian,
-    });
-    const startBlock = getStartOfRewardsBlock()
-    rewards.push({
-        block_number: startBlock.number,
-        block_time: startBlock.time,
-        tx_hash: '',
-        additional_info_link: '',
-        amount: 0,
-        total_awarded: 0, 
-        guardian_from: '', // this is way before rewards so doesn't really matter.
-    });
 }

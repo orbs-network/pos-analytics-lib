@@ -6,12 +6,15 @@
  * The above notice should be included in all copies or substantial portions of the software.
  */
 
+import _ from 'lodash';
 import BigNumber from 'bignumber.js';
 import fetch from 'node-fetch';
 import { retry } from 'ts-retry-promise';
+import { PosOptions } from './model';
 
+export const DECIMALS = '1e18';
 export function bigToNumber(n: BigNumber):number {
-  return n.dividedBy("1e18").toNumber();
+  return n.dividedBy(DECIMALS).toNumber();
 }
 
 // returns UTC clock time in seconds (similar to unix timestamp / Ethereum block time / RefTime)
@@ -49,4 +52,21 @@ function byte(value: number, byteIdx: number) {
 export function getIpFromHex(ipStr: string): string {
   const ipBytes = Number(ipStr);
   return byte(ipBytes, 3) + '.' + byte(ipBytes, 2) + '.' + byte(ipBytes, 1) + '.' + byte(ipBytes, 0);
+}
+
+export function parseOptions(input?: any): PosOptions {
+  const read_history = input?.read_history === undefined ? true : new Boolean(input.read_history).valueOf();
+  const read_from_block = _.isNumber(input?.read_from_block) ? new Number(input.read_from_block).valueOf() : 0;
+  const read_rewards_disable = new Boolean(input?.read_rewards_disable).valueOf(); // default is to read
+
+  return {
+    read_history,
+    read_from_block,
+    read_rewards_disable
+  };
+}
+
+export function optionsStartFromText(options: PosOptions, currentBlockNumber: number) : number | string {
+  if (options.read_from_block === 0 || options.read_from_block === -1) return 'Earliest Possible';
+  return options.read_from_block < 0 ? currentBlockNumber+options.read_from_block : options.read_from_block;
 }

@@ -7,9 +7,9 @@
  */
 
 import _ from 'lodash';
-import { getWeb3, readOverviewDataFromState } from "./eth-helpers";
+import { Contracts, getBlockEstimatedTime, getStartOfDelegationBlock, getWeb3, readBalances, readContractEvents, readOverviewDataFromState, readStakes, Topics } from "./eth-helpers";
 import { fetchJson } from './helpers';
-import { PosOverview, PosOverviewSlice, PosOverviewData } from './model';
+import { PosOverview, PosOverviewSlice, PosOverviewData, Delegator } from './model';
 
 export async function getOverview(networkNodeUrls: string[], ethereumEndpoint: string): Promise<PosOverview> {
     let fullError = ''; 
@@ -23,6 +23,35 @@ export async function getOverview(networkNodeUrls: string[], ethereumEndpoint: s
     }
 
     throw new Error(`Error while creating list of Guardians, all Netowrk Node URL failed to respond. ${fullError}`);
+}
+
+export async function getAllDelegators(ethereumEndpoint: string) {
+    const web3 = await getWeb3(ethereumEndpoint);  
+    const events = await readContractEvents([Topics.Delegated], Contracts.Delegate, web3, getStartOfDelegationBlock().number);
+
+    const delegatorMap: {[key:string]: Delegator} = {};
+    for (let event of events) {
+        const delegatorAddress = new String(event.returnValues.from).toLowerCase();
+        const delegator = {
+            address: delegatorAddress,
+            delegated_to: new String(event.returnValues.to).toLowerCase(),
+            stake: 0,
+            non_stake: 0,
+            last_change_block: event.blockNumber,
+            last_change_time: 0,
+        }
+        delegatorMap[delegatorAddress] = delegator;
+    }
+
+    const balanceMap = await readBalances(_.keys(delegatorMap), web3);
+    const stakeMap = await readStakes(_.keys(delegatorMap), web3);
+    _.forOwn(delegatorMap, (v) => {
+        v.last_change_time = getBlockEstimatedTime(v.last_change_block);
+        v.non_stake = balanceMap[v.address];
+        v.stake = stakeMap[v.address];
+    });
+
+    return delegatorMap;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -63,8 +92,8 @@ async function parseRawData(data:any, ethereumEndpoint:string) : Promise<PosOver
     });
     slices.sort((n1:any, n2:any) => n2.block_time - n1.block_time); // desc
 
-    const {block, web3} = await getWeb3(ethereumEndpoint);
-    const totalStake = await readOverviewDataFromState(block.number, web3);
+    const web3 = await getWeb3(ethereumEndpoint);
+    const {block, totalStake} = await readOverviewDataFromState(web3);
     const apy = 4000;
     
     return {
