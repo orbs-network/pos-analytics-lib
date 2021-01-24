@@ -18,20 +18,19 @@ async function x() {
     const nodeEndpoints = [
         'https://0xcore.orbs.com/services/management-service/status',  // for actual production front-end with https
         'http://0xaudit.orbs.com/services/management-service/status', // for dev non https
-        'http://52.20.37.155/services/management-service/status',  // for dev non https
     ];
 
     const totalTimeStart = Date.now();
  
     let s = Date.now();
-    const delegatorInfo = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint);
+    const delegatorInfo = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint, {read_history: false});
     console.log(`fast delegator took ${(Date.now() - s) / 1000.0} seconds`);
     const dfilepath = path.resolve(__dirname, `../data/delegator.json`);   
     fs.writeFileSync(dfilepath, toConsole(delegatorInfo));
     // console.log(toConsole(delegatorInfo));
 
     s = Date.now()
-    const delegatorFullInfo = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint, {read_rewards: true});
+    const delegatorFullInfo = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint);
     console.log(`full delegator took ${(Date.now() - s) / 1000.0} seconds`);
     const dFullfilepath = path.resolve(__dirname, `../data/delegator_full.json`);   
     fs.writeFileSync(dFullfilepath, toConsole(delegatorFullInfo));
@@ -40,7 +39,14 @@ async function x() {
     // console.log(toConsole(delegatorFullInfo));
 
     s = Date.now()
-    const delegatorOnly50Info = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint, {read_rewards: true, read_rewards_from: -50000});
+    const delegatorNoRewardsInfo = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint, {read_rewards_disable: true});
+    console.log(`no rewards full delegator took ${(Date.now() - s) / 1000.0} seconds`);
+    const dNoRewardsfilepath = path.resolve(__dirname, `../data/delegator_no_rewards.json`);   
+    fs.writeFileSync(dNoRewardsfilepath, toConsole(delegatorNoRewardsInfo));
+    // console.log(toConsole(delegatorNoRewardsInfo));
+
+    s = Date.now()
+    const delegatorOnly50Info = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint, {read_from_block: -50000});
     console.log(`50k delegator took ${(Date.now() - s) / 1000.0} seconds`);
     const dOnly50filepath = path.resolve(__dirname, `../data/delegator_only_50000.json`);   
     fs.writeFileSync(dOnly50filepath, toConsole(delegatorOnly50Info));
@@ -53,20 +59,22 @@ async function x() {
     fs.writeFileSync(dRewardsfilepath, toConsole(delegatorRewardsInfo));
     // console.log(toConsole(rewards));
 
-    const guardians = await getGuardians(nodeEndpoints);
-    const gsfilepath = path.resolve(__dirname, `../data/guardians.json`);   
-    fs.writeFileSync(gsfilepath, toConsole(guardians));
-    //console.log(toConsole(guardians));
+    try {
+        const guardians = await getGuardians(nodeEndpoints);
+        const gsfilepath = path.resolve(__dirname, `../data/guardians.json`);   
+        fs.writeFileSync(gsfilepath, toConsole(guardians));
+        //console.log(toConsole(guardians));
+    } catch (e) {console.log('failed to read guardian list: ' + e.stack)} // nothing to do
 
     s = Date.now()
-    const guardianInfo = await getGuardian('0xc5e624d6824e626a6f14457810e794e4603cfee2', ethereumEndpoint);
+    const guardianInfo = await getGuardian('0xc5e624d6824e626a6f14457810e794e4603cfee2', ethereumEndpoint, {read_history: false});
     console.log(`fast guardian took ${(Date.now() - s) / 1000.0} seconds`);
     const gfilepath = path.resolve(__dirname, `../data/guardian.json`);   
     fs.writeFileSync(gfilepath, toConsole(guardianInfo));
     //console.log(toConsole(guardianInfo));
 
     s = Date.now()
-    const guardianFullInfo = await getGuardian('0xc5e624d6824e626a6f14457810e794e4603cfee2', ethereumEndpoint, {read_rewards: true});
+    const guardianFullInfo = await getGuardian('0xc5e624d6824e626a6f14457810e794e4603cfee2', ethereumEndpoint);
     console.log(`full guardian took ${(Date.now() - s) / 1000.0} seconds`);
     const gFullfilepath = path.resolve(__dirname, `../data/guardian_full.json`);   
     fs.writeFileSync(gFullfilepath, toConsole(guardianFullInfo));
@@ -75,7 +83,14 @@ async function x() {
     // console.log(toConsole(guardianFullInfo));
 
     s = Date.now()
-    const guardianOnly50kInfo = await getGuardian('0xc5e624d6824e626a6f14457810e794e4603cfee2', ethereumEndpoint, {read_rewards: true, read_rewards_from: -50000});
+    const guardianNoRewardsInfo = await getGuardian('0xc5e624d6824e626a6f14457810e794e4603cfee2', ethereumEndpoint, {read_rewards_disable: true});
+    console.log(`no rewards full guardian took ${(Date.now() - s) / 1000.0} seconds`);
+    const gNoRewardsfilepath = path.resolve(__dirname, `../data/guardian_no_rewards.json`);   
+    fs.writeFileSync(gNoRewardsfilepath, toConsole(guardianNoRewardsInfo));
+    // console.log(toConsole(guardianNoRewardsInfo));
+
+    s = Date.now()
+    const guardianOnly50kInfo = await getGuardian('0xc5e624d6824e626a6f14457810e794e4603cfee2', ethereumEndpoint, {read_from_block: -50000});
     console.log(`50k guardian took ${(Date.now() - s) / 1000.0} seconds`);
     const gOnly50kfilepath = path.resolve(__dirname, `../data/guardian_only_50000.json`);   
     fs.writeFileSync(gOnly50kfilepath, toConsole(guardianOnly50kInfo));
@@ -88,10 +103,12 @@ async function x() {
     fs.writeFileSync(gRewardsfilepath, toConsole(guardianRewardsInfo));
     // console.log(toConsole(guardianFullInfo));
 
-    const overview = await getOverview(nodeEndpoints, ethereumEndpoint);
-    const filepath = path.resolve(__dirname, `../data/overview.json`);   
-    fs.writeFileSync(filepath, toConsole(overview));
-    // console.log(toConsole(overview));
+    try {
+        const overview = await getOverview(nodeEndpoints, ethereumEndpoint);
+        const filepath = path.resolve(__dirname, `../data/overview.json`);   
+        fs.writeFileSync(filepath, toConsole(overview));
+        // console.log(toConsole(overview));
+    } catch (e) {console.log('failed to read overview: ' + e.stack)} // nothing to do
 
     s = Date.now()
     const allDelegators = await getAllDelegators(ethereumEndpoint);
@@ -100,7 +117,7 @@ async function x() {
     fs.writeFileSync(allDelegatorsFilePath, toConsole(allDelegators));
     const allDelegatorsXlsx = allDelegatorsToXlsx(allDelegators, 'buffer');
     fs.writeFileSync(path.resolve(__dirname, `../data/all_delegators.xlsx`), allDelegatorsXlsx);
-    // // console.log(toConsole(allDelegators));
+    // console.log(toConsole(allDelegators));
 
     console.log(`test took ${(Date.now() - totalTimeStart) / 1000.0} seconds`)
 }

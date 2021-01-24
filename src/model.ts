@@ -7,10 +7,9 @@
  */
 
 export interface PosOptions {
-    read_stake: boolean;
-    read_stake_from: number;
-    read_rewards: boolean;
-    read_rewards_from: number;
+    read_history: boolean;
+    read_from_block: number;
+    read_rewards_disable: boolean;
 }
 
 export interface PosOverview {
@@ -57,19 +56,21 @@ export interface Guardian {
     website: string;
     effective_stake: number;
     ip: string;
+    certified: boolean;
 }
 
 export interface GuardianInfo {
     address: string;
     block_number: number;
     block_time: number;
+    read_from_block: number | string;
     details: GuardianDetails;
     stake_status: GuardianStakeStatus;
     reward_status: GuardianRewardStatus;
     stake_slices: GuardianStake[];
     actions: Action[];
     reward_as_guardian_slices: GuardianReward[];
-    reward_as_delegator_slices: GuardianReward[];
+    reward_as_delegator_slices: DelegatorReward[];
     fees_slices: GuardianReward[];
     bootstrap_slices: GuardianReward[];
     delegators: GuardianDelegator[];
@@ -84,6 +85,7 @@ export interface GuardianDetails {
     details_URL: string;
     registration_time: number;
     last_update_time: number;
+    certified: boolean;
 }
 
 export interface GuardianStakeStatus {
@@ -146,6 +148,7 @@ export interface DelegatorInfo {
     address: string;
     block_number: number;
     block_time: number;
+    read_from_block: number | string;
     total_stake: number;
     cooldown_stake: number;
     current_cooldown_time: number;
@@ -168,11 +171,6 @@ export interface DelegatorStake {
 
 export interface DelegatorAction extends Action {}
 
-export interface DelegatorReward {
-    block_number: number;
-    block_time: number;
-    tx_hash: string;
-    additional_info_link: string;
-    total_awarded: number;
+export interface DelegatorReward extends GuardianReward {
     guardian_from: string;
 }

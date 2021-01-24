@@ -13,7 +13,9 @@ npm i @orbs-network/pos-analytics-lib
 
 * getDelegator
 
-Used to query information about delegator's stake, previous actions and optional rewards. Funciton's input is the requested delegator's address, an Ethereum endpoint (for example infura link with apikey) and boolean value for telling the function to read also all reward history (default is false).
+Used to query information about delegator's stake, previous actions and optional rewards.
+Funciton's input is the requested delegator's address, an Ethereum endpoint (for example infura link with apikey) 
+and optional options object to modify output (see below).
 
 ```
 const delegatorInfo = await getDelegator(
@@ -25,13 +27,15 @@ Or
 ```
 const delegatorAndRewardsInfo = await getDelegator(
   '0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA',
-  ethereumEndpoint, true
+  ethereumEndpoint, {read_from_block: -1000000}
 );
 ```  
 
 * getDelegatorStakingRewards
 
-Used to query information about delegator's staking rewards history & claim action history. Funciton's input is the requested delegator's address, an Ethereum endpoint (for example infura link with apikey).
+Used to query information about delegator's staking rewards history & claim action history.
+Funciton's input is the requested delegator's address, an Ethereum endpoint (for example infura link with apikey) 
+and optional options object to modify output (see below).
 
 ```
 const { rewards, claimActions } = await getDelegatorStakingRewards(
@@ -50,7 +54,11 @@ const guardians = await getGuardians(nodeEndpoints);
 
 * getGuardian
 
-Used to query a guardian's staking and delegator history, list all current delegators and optional rewards history and . Function's input is the requested guardian's address, an Ethereum endpoint (for example infura link with apikey), and boolean value for telling the function to read also all reward history (default is false).
+Used to query a guardian's staking and delegator history, list all current delegators and event history.
+Function's input is the requested guardian's address, an Ethereum endpoint (for example infura link with apikey) 
+and optional options object to modify output (see below).
+<br>Please note: as long as history reading is not disabled all of the delegation history of the guardian is always read.
+
 ```
 const guardianInfo = await getGuardian(
   '0xf7ae622c77d0580f02bcb2f92380d61e3f6e466c',
@@ -61,13 +69,16 @@ Or
 ```
 const guardianAndRewardsInfo = await getGuardian(
   '0xf7ae622c77d0580f02bcb2f92380d61e3f6e466c',
-  ethereumEndpoint, true
+  ethereumEndpoint, {read_from_block: -1000000, read_rewards_disable: true}
 );
 ```
 
 * getGuardianStakingRewards
 
-Used to query information about guardian's staking rewards history (both as guardian and as self-delegator) & claim action history. Funciton's input is the requested guardian's address, an Ethereum endpoint (for example infura link with apikey).
+Used to query information about guardian's staking rewards history (both as guardian and as self-delegator) & claim action history.
+Funciton's input is the requested guardian's address, an Ethereum endpoint (for example infura link with apikey)
+and optional options object to modify output (see below).
+
 ```
 const { rewardsAsGuardian, rewardsAsDelegator, claimActions } = await getGuardianStakingRewards(
   '0xf7ae622c77d0580f02bcb2f92380d61e3f6e466c',
@@ -133,20 +144,24 @@ fs.writeFileSync(path, delegatorsXlsx);
 * Address - Ethereum address of delegator or guardian to test
 * EthereumEndpoit - Ethereum url for web3 http provider such as Infura (i.e: https://mainnet.infura.io/v3/<YOUR-INFURA-KEY>)
 * NodesEndpoint - a list of one or more ORBS node management status URLs (i.e: http://54.168.36.177/services/management-service/status), these will be queries in order and first one that answers is the one used.
-* options (for getDelegator & getGuardian only) - a modifier object. The default values are shown after each key:
+* options (for getDelegator, getGuardian, getDelegatorStakingRewards & getGuardianStakingRewards only) - a modifier object. The default values are shown after each key:
 ```
 {
-    read_stake: true,          
-    read_stake_from: 9830000,
-    read_rewards: false,
-    read_rewards_from: 11145373, 
+    read_history: true,          
+    read_from_block: 0,
+    read_rewards_disable: false,
 }
 ```
 
-| Field               | Explanation          |
-| ------------------- | -------------------- |
-| `read_rewards`      | Read the historical changes (events) of all reward-event and generate the corresponding array of values.<br> Default is `false` | 
-| `read_rewards_from` | Start block of reading reward-events.<br>Possible Values: 0 - block number of contract deployment, positive - block to start from, negative - how many blocks back to start from (i.e. -500 = 500 block before 'latest')<br>Please note you cannot query events from blocks before first contract of the type was deployed.    |
+| Field                  | Explanation          |
+| ---------------------- | -------------------- |
+| `read_history`         | Read the historical changes (events) from ethereum event histor and generate the corresponding arrays of values (rewards, stakes, actions etc).<br> Default is `true`<br>A `false` value is quicker but returns only the current state values of the participant (guardian or delegator) | 
+| `read_from_block`      | Start block of reading events.<br>Possible Values: 0/-1 - block number of contract deployment (earliest available), positive - block to start from, negative - how many blocks back to start from (i.e. -500 = 500 block before 'latest')<br>Please note you cannot query events from blocks before first contract of the type was deployed.<br>Value has no effect if read_history is set to `false`.    |
+| `read_rewards_disable` | Read and calculate rewards slows down respons time so with this field can disable just the stake rewards part.<br> Default is `false`.<br>Value has no effect if read_history is `false`. | 
+Please note: 
+1) For the functions getDelegatorStakingRewards & getGuardianStakingRewards only the `read_from_block` is used.
+2) For function getGuardian when `read_history` is true the whole delegation history is read regardless of the `read_from_block`. This also mean that staking 
+history is also read from at least the begining of Delegation contract deployment (In full history mode there may be self-stake event before delegation).
 
 ### Outputs
 Please have a look at the [model.ts](src/model.ts) for the full output definisions. 

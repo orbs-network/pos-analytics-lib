@@ -9,11 +9,11 @@
 import _ from 'lodash';
 import BigNumber from 'bignumber.js';
 import { bigToNumber, parseOptions } from './helpers';
-import { addressToTopic, ascendingEvents, Contracts, descendingBlockNumbers, generateTxLink, getBlockEstimatedTime, getStartOfRewardsBlock, getWeb3, readContractEvents, readDelegatorDataFromState, readGuardianDataFromState, Topics } from "./eth-helpers";
+import { addressToTopic, ascendingEvents, Contracts, descendingBlockNumbers, generateTxLink, getBlockEstimatedTime, getQueryRewardsBlock, getStartOfRewardsBlock, getWeb3, readContractEvents, readDelegatorDataFromState, readGuardianDataFromState, Topics } from "./eth-helpers";
 import { Action, DelegatorReward, GuardianReward, PosOptions} from './model';
 
-export async function getGuardianStakingRewards(address: string, ethereumEndpoint: string, options?: PosOptions | any): Promise<{rewardsAsGuardian: GuardianReward[];rewardsAsDelegator: DelegatorReward[];claimActions: Action[];}> {
-    const web3 = await getWeb3(ethereumEndpoint); 
+export async function getGuardianStakingRewards(address: string, ethereumEndpoint: string | any, options?: PosOptions | any): Promise<{rewardsAsGuardian: GuardianReward[];rewardsAsDelegator: DelegatorReward[];claimActions: Action[];}> {
+    const web3 = _.isString(ethereumEndpoint) ? await getWeb3(ethereumEndpoint) : ethereumEndpoint;  
     const ethData = await readGuardianDataFromState(address, web3);
     return getGuardianRewardsStakingInternal(address, ethData , web3, parseOptions(options));
 }
@@ -48,8 +48,8 @@ export async function getGuardianRewardsStakingInternal(address: string, ethStat
     return { rewardsAsGuardian, rewardsAsDelegator, claimActions };
 }
 
-export async function getDelegatorStakingRewards(address: string, ethereumEndpoint: string, options?: PosOptions | any): Promise<{rewards: DelegatorReward[];claimActions: Action[];}> {
-    const web3 = await getWeb3(ethereumEndpoint);
+export async function getDelegatorStakingRewards(address: string, ethereumEndpoint: string | any, options?: PosOptions | any): Promise<{rewards: DelegatorReward[];claimActions: Action[];}> {
+    const web3 = _.isString(ethereumEndpoint) ? await getWeb3(ethereumEndpoint) : ethereumEndpoint;  
     const ethData = await readDelegatorDataFromState(address, web3);
     return getDelegatorRewardsStakingInternal(address, ethData , web3, parseOptions(options));
 }
@@ -81,12 +81,13 @@ export async function getDelegatorRewardsStakingInternal(address: string, ethSta
 
 // special case for the "fast" getDelegator/getGuardian version
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function getRewardsClaimActions(address: string, web3: any, isGuardian: boolean): Promise<{claimActions: Action[]}> {   
-    const events = await readContractEvents([Topics.StakingRewardsClaimed, addressToTopic(address)], Contracts.Reward, web3);
+export async function getRewardsClaimActions(address: string, ethState:any, web3:any, options: PosOptions, isGuardian: boolean): Promise<{claimActions: Action[]}> {   
+    const startBlock = getQueryRewardsBlock(options.read_from_block, ethState.block.number)
+    const events = await readContractEvents([Topics.StakingRewardsClaimed, addressToTopic(address)], Contracts.Reward, web3, startBlock);
     return {claimActions: filterClaimActions(events, isGuardian)};
 }
 
-// creates 4 new lists:
+// creates 3 new lists:
 // guardianAssign (only first in each block)
 // delegatorAssign (only first in each block)
 // delegationChanges list of all the guardians and from/to of delegation
@@ -374,9 +375,8 @@ interface DelegatorGuardianTransitions {
 }
 
 function getStateData(address: string, ethState:any, options: PosOptions, isGuardian: boolean): RewardStateData{
-    let startBlock = options.read_rewards_from > 0 ? options.read_rewards_from : ethState.block.number+options.read_rewards_from;
     return {
-        startBlockNumber: Math.min(startBlock, getStartOfRewardsBlock().number),
+        startBlockNumber: getQueryRewardsBlock(options.read_from_block, ethState.block.number),
         endBlockNumber: ethState.block.number,
         isGuardian,
         // values "as delegator"

@@ -11,7 +11,6 @@ import BigNumber from 'bignumber.js';
 import fetch from 'node-fetch';
 import { retry } from 'ts-retry-promise';
 import { PosOptions } from './model';
-import { getStartOfPoSBlock, getStartOfRewardsBlock } from './eth-helpers';
 
 export const DECIMALS = '1e18';
 export function bigToNumber(n: BigNumber):number {
@@ -56,24 +55,18 @@ export function getIpFromHex(ipStr: string): string {
 }
 
 export function parseOptions(input?: any): PosOptions {
-  const read_stake = true;
-  const read_stake_from = getStartOfPoSBlock().number;
-  const read_rewards = new Boolean(input?.read_rewards).valueOf();
-  const read_rewards_from = parseNumber(getStartOfRewardsBlock().number, input?.read_rewards_from);
+  const read_history = input?.read_history === undefined ? true : new Boolean(input.read_history).valueOf();
+  const read_from_block = _.isNumber(input?.read_from_block) ? new Number(input.read_from_block).valueOf() : 0;
+  const read_rewards_disable = new Boolean(input?.read_rewards_disable).valueOf(); // default is to read
 
   return {
-    read_stake,
-    read_stake_from,
-    read_rewards,
-    read_rewards_from,
+    read_history,
+    read_from_block,
+    read_rewards_disable
   };
 }
 
-function parseNumber(defaultValue: number, input?: any): number {
-  if (!_.isNumber(input)) {
-    return defaultValue;
-  } else {
-    const r = new Number(input).valueOf();
-    return  ( r === 0 || r === -1) ? defaultValue : r
-  }
+export function optionsStartFromText(options: PosOptions, currentBlockNumber: number) : number | string {
+  if (options.read_from_block === 0 || options.read_from_block === -1) return 'Earliest Possible';
+  return options.read_from_block < 0 ? currentBlockNumber+options.read_from_block : options.read_from_block;
 }
