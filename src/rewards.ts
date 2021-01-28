@@ -11,7 +11,6 @@ import BigNumber from 'bignumber.js';
 import { bigToNumber, parseOptions } from './helpers';
 import { addressToTopic, ascendingEvents, Contracts, descendingBlockNumbers, generateTxLink, getBlockEstimatedTime, getQueryRewardsBlock, getStartOfRewardsBlock, getWeb3, readContractEvents, readDelegatorDataFromState, readGuardianDataFromState, Topics } from "./eth-helpers";
 import { Action, DelegatorReward, GuardianReward, PosOptions} from './model';
-import { toConsole } from './trial.test';
 
 export async function getGuardianStakingRewards(address: string, ethereumEndpoint: string | any, options?: PosOptions | any): Promise<{rewardsAsGuardian: GuardianReward[];rewardsAsDelegator: DelegatorReward[];claimActions: Action[];}> {
     const web3 = _.isString(ethereumEndpoint) ? await getWeb3(ethereumEndpoint) : ethereumEndpoint;  
