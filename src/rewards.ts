@@ -11,6 +11,7 @@ import BigNumber from 'bignumber.js';
 import { bigToNumber, parseOptions } from './helpers';
 import { addressToTopic, ascendingEvents, Contracts, descendingBlockNumbers, generateTxLink, getBlockEstimatedTime, getQueryRewardsBlock, getStartOfRewardsBlock, getWeb3, readContractEvents, readDelegatorDataFromState, readGuardianDataFromState, Topics } from "./eth-helpers";
 import { Action, DelegatorReward, GuardianReward, PosOptions} from './model';
+import { toConsole } from './trial.test';
 
 export async function getGuardianStakingRewards(address: string, ethereumEndpoint: string | any, options?: PosOptions | any): Promise<{rewardsAsGuardian: GuardianReward[];rewardsAsDelegator: DelegatorReward[];claimActions: Action[];}> {
     const web3 = _.isString(ethereumEndpoint) ? await getWeb3(ethereumEndpoint) : ethereumEndpoint;  
@@ -200,6 +201,8 @@ function mergeAndUniqueOfTwoEventLists(leadEvents:any[], followerEvents:any[]){
 
 // function sorts & resizes the events to hold only the first one in each block.
 function uniqueBlockEvents(events:any[]) {
+    if (events.length < 2) return events;
+
     events.sort(ascendingEvents);
     let lastUniqueEventIndex = 0;
     for (let i = 1; i < events.length;i++) {
