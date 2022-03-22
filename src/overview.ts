@@ -26,7 +26,7 @@ export async function getOverview(networkNodeUrls: string[], ethereumEndpoint: s
 }
 
 export async function getAllDelegators(ethereumEndpoint: string) {
-    const web3 = await getWeb3(ethereumEndpoint);  
+    const web3 = _.isString(ethereumEndpoint) ? await getWeb3(ethereumEndpoint) : ethereumEndpoint;
     const events = await readContractEvents([Topics.Delegated], Contracts.Delegate, web3, getStartOfDelegationBlock().number);
 
     const delegatorMap: {[key:string]: Delegator} = {};
@@ -92,7 +92,7 @@ async function parseRawData(data:any, ethereumEndpoint:string) : Promise<PosOver
     });
     slices.sort((n1:any, n2:any) => n2.block_time - n1.block_time); // desc
 
-    const web3 = await getWeb3(ethereumEndpoint);
+    const web3 = _.isString(ethereumEndpoint) ? await getWeb3(ethereumEndpoint) : ethereumEndpoint;
     const {block, totalStake} = await readOverviewDataFromState(web3);
     const apy = 4000;
     
