@@ -13,8 +13,27 @@ import { addressToTopic, ascendingEvents, Contracts, getBlockEstimatedTime, gene
 import { Guardian, GuardianInfo, GuardianDelegator, GuardianReward, GuardianStake, GuardianAction, DelegatorReward, PosOptions } from './model';
 import { getGuardianRewardsStakingInternal, getRewardsClaimActions } from './rewards';
 
-export async function getGuardians(networkNodeUrls: string[]): Promise<Guardian[]> {
-    let fullError = ''; 
+export async function getGuardiansCert(networkNodeUrls: string[]) {
+    let fullError = '';
+    let certs: {[key: string]: boolean } = {}
+    for (const url of networkNodeUrls) {
+        try {
+            const rawData = await fetchJson(url);
+            _.forEach(rawData.Payload.Guardians, guardian => {
+                certs[guardian.Name] = guardian?.IdentityType === 1;
+            });
+            return certs;
+        } catch (e) {
+            fullError += `Warning: access to URL ${url} failed, trying another. Error: ${e}\n`;
+        }
+    }
+    throw new Error(`Error while checking Guardians, all Network Node URL failed to respond. ${fullError}`);
+}
+
+export async function getGuardians(networkNodeUrls: string[], ethNodeEndpoints: string[] = []): Promise<Guardian[]> {
+    // Certificates for guardians are only available on Ethereum, so in order to fetch this data we need to pass ethNodeEndpoints
+    const guardiansCerts = ethNodeEndpoints ? await getGuardiansCert(ethNodeEndpoints) : {}
+    let fullError = '';
     for(const url of networkNodeUrls) {
         try {
             const rawData = await fetchJson(url);
@@ -25,7 +44,7 @@ export async function getGuardians(networkNodeUrls: string[]): Promise<Guardian[
                     website: guardian.Website, 
                     effective_stake: Number(guardian?.EffectiveStake || 0),
                     ip: guardian?.Ip || '',
-                    certified: guardian?.IdentityType === 1,
+                    certified: guardiansCerts[guardian.Name] || guardian?.IdentityType === 1,
                 }
             });
         } catch (e) {
