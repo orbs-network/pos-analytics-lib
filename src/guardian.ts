@@ -132,8 +132,8 @@ export async function getGuardianStakeAndDelegationChanges(address: string, ethS
     const delegatorMap: {[key:string]: GuardianDelegator} = {};
     const delegationStakes: GuardianStake[] = [];
     const delegateActions: GuardianAction[] = [];
-    events.sort(ascendingEvents); 
-    
+    events.sort(ascendingEvents);
+    const chainId = await web3.eth.getChainId();
     for (let event of events) {
         if (event.signature === Topics.DelegateStakeChanged) {
             const delegatorAddress = event.returnValues.delegator.toLowerCase();
@@ -150,13 +150,13 @@ export async function getGuardianStakeAndDelegationChanges(address: string, ethS
             const selfDelegate = new BigNumber(event.returnValues.selfDelegatedStake);
             const allStake = new BigNumber(event.returnValues.delegatedStake);
                 
-            addOrUpdateStakeList(delegationStakes, event.blockNumber, bigToNumber(selfDelegate), bigToNumber(allStake.minus(selfDelegate)), _.size(delegatorMap));
+            addOrUpdateStakeList(delegationStakes, event.blockNumber, bigToNumber(selfDelegate), bigToNumber(allStake.minus(selfDelegate)), _.size(delegatorMap), chainId);
         } else if (event.signature === Topics.Delegated) {
             const toAddress = String(event.returnValues.to).toLowerCase();
             delegateActions.push({
                 contract: event.address.toLowerCase(),
                 event: toAddress === address.toLowerCase() ? 'SelfDelegated' : event.event,
-                block_time: getBlockEstimatedTime(event.blockNumber),
+                block_time: getBlockEstimatedTime(event.blockNumber, chainId),
                 block_number: event.blockNumber,
                 tx_hash: event.transactionHash,
                 additional_info_link: generateTxLink(event.transactionHash),
@@ -177,7 +177,7 @@ export async function getGuardianStakeAndDelegationChanges(address: string, ethS
     return { delegationStakes, delegatorMap, delegateActions };
 }
 
-function addOrUpdateStakeList(stakes: GuardianStake[], blockNumber: number, selfStake: number, delegateStake: number, nDelegators: number) {
+function addOrUpdateStakeList(stakes: GuardianStake[], blockNumber: number, selfStake: number, delegateStake: number, nDelegators: number, chainId: number) {
     if (stakes.length > 0 && stakes[stakes.length-1].block_number == blockNumber) {
         const curr = stakes[stakes.length-1];
         curr.self_stake = selfStake;
@@ -185,7 +185,7 @@ function addOrUpdateStakeList(stakes: GuardianStake[], blockNumber: number, self
         curr.total_stake = selfStake + delegateStake;
         curr.n_delegates = nDelegators;
     } else {
-        stakes.push(generateStakeAction(blockNumber, getBlockEstimatedTime(blockNumber), 
+        stakes.push(generateStakeAction(blockNumber, getBlockEstimatedTime(blockNumber, chainId),
             selfStake, delegateStake, selfStake + delegateStake, nDelegators));
     }
 }
@@ -199,7 +199,8 @@ export async function getGuardianStakeActions(address: string, ethState:any, web
 
     let totalStake = new BigNumber(0);
     const stakesBeforeDelegation: GuardianStake[] = [];
-    const stakeActions: GuardianAction[] = [];    
+    const stakeActions: GuardianAction[] = [];
+    const chainId = await web3.eth.getChainId();
     for (let event of events) {
         const amount = new BigNumber(event.returnValues.amount);
         if (event.signature === Topics.Staked || event.signature === Topics.Restaked) {
@@ -212,7 +213,7 @@ export async function getGuardianStakeActions(address: string, ethState:any, web
             contract: event.address.toLowerCase(),
             event: event.event,
             block_number: event.blockNumber,
-            block_time: getBlockEstimatedTime(event.blockNumber),
+            block_time: getBlockEstimatedTime(event.blockNumber, chainId),
             tx_hash: event.transactionHash,
             additional_info_link: generateTxLink(event.transactionHash),
             amount: bigToNumber(amount),

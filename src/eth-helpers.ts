@@ -77,7 +77,7 @@ export async function getWeb3(ethereumEndpoint: string, readContracts:boolean = 
     contractsData[Contracts.FeeBootstrapReward] = [];
     contractsData[Contracts.Guardian] = [];
     contractsData[Contracts.Erc20] = [{address: '0xff56Cc6b1E6dEd347aA0B7676C85AB0B3D08B0FA', startBlock: 5710114, endBlock: 'latest', abi: erc20Abi}];
-    contractsData[Contracts.Stake] = [{address: '0x01D59Af68E2dcb44e04C50e05F62E7043F2656C3', startBlock: FirstPosv2BlockNumber, endBlock: 'latest', abi: stakeAbi}];
+    contractsData[Contracts.Stake] = [{address: '0x01D59Af68E2dcb44e04C50e05F62E7043F2656C3', startBlock: getStartOfPosBlock(1).number, endBlock: 'latest', abi: stakeAbi}];
     contractsData[Contracts.Registry] = [{address: '0xD859701C81119aB12A1e62AF6270aD2AE05c7AB3', startBlock: 11191400, endBlock: 'latest', abi: registryAbi /*getAbiByContractName(Contracts.Registry)*/ }];
     
     if (readContracts) {
@@ -136,18 +136,24 @@ export async function getCurrentBlockInfo(web3:Web3): Promise<BlockInfo> {
     return {time: Number(block.timestamp)-13, number: block.number-1 } // one block back to avoid provider jitter
 }
 
-export function getBlockEstimatedTime(blockNumber: number, refBlock?: BlockInfo) {
-    if (!_.isObject(refBlock)) {
-        refBlock = {time: 1603200055, number: 11093232 }
-    }
-    const avgBlockTime = (refBlock.time - FirstPosv2BlockTime) / (refBlock.number - FirstPosv2BlockNumber);
-    return FirstPosv2BlockTime + Math.round((blockNumber - FirstPosv2BlockNumber) * avgBlockTime);
+const refBlocksMap: {[chainId: number]: {time: number, number: number}} = {
+    1: {time: 1603200055, number: 11093232 },
+    137: {time: 1620563553, number: 14283390 }
 }
 
-const FirstPosv2BlockNumber = 9830000;
-const FirstPosv2BlockTime = 1586328645;
-export function getStartOfPosBlock(): BlockInfo {
-    return {number: FirstPosv2BlockNumber, time: FirstPosv2BlockTime };
+export function getBlockEstimatedTime(blockNumber: number, chainId: number = 1) {
+    const refBlock = refBlocksMap[chainId];
+    const blockInfo = getStartOfPosBlock(chainId);
+    const avgBlockTime = (refBlock.time - blockInfo.time) / (refBlock.number - blockInfo.number);
+    return blockInfo.time + Math.round((blockNumber - blockInfo.number) * avgBlockTime);
+}
+
+export function getStartOfPosBlock(chainId: number = 1): BlockInfo {
+    const blocksMap: {[chainId: string]: {time: number, number: number}} = {
+        1: {time: 1586328645, number: 9830000 },
+        137: {time: 1646207643, number: 25487295 }
+    }
+    return blocksMap[chainId];
 }
 
 export function getQueryPosBlock(potentialStart: number, nowBlock: number): number {
@@ -155,7 +161,7 @@ export function getQueryPosBlock(potentialStart: number, nowBlock: number): numb
     return Math.max(getStartOfPosBlock().number, potentialStart < 0 ? nowBlock+potentialStart : potentialStart);
 }
 
-export function getStartOfRewardsBlock(): BlockInfo {
+export function getStartOfRewardsBlock(): BlockInfo { // TODO: add support for Polygon
     return {number: 11191407, time: 1604459620 };
 }
 
@@ -164,7 +170,7 @@ export function getQueryRewardsBlock(potentialStart: number, nowBlock: number): 
     return Math.max(getStartOfRewardsBlock().number, potentialStart < 0 ? nowBlock+potentialStart : potentialStart);
 }
 
-export function getStartOfDelegationBlock(): BlockInfo {
+export function getStartOfDelegationBlock(): BlockInfo { // TODO: add support for Polygon
     return {number: 11191403, time: 1604459583 };
 }
 
@@ -482,7 +488,11 @@ export function addressToTopic(address:string) {
     return '0x000000000000000000000000' + address.substr(2).toLowerCase();
 }
 
-export async function readContractEvents(filter: (string[] | string | undefined)[], contractsType:Contracts, web3:Web3, fromBlock:number = FirstPosv2BlockNumber, toBlock:number|string = 'latest') {
+export async function readContractEvents(filter: (string[] | string | undefined)[], contractsType:Contracts, web3:Web3, fromBlock?:number, toBlock:number|string = 'latest') {
+    if (!fromBlock) {
+        const chainId = await web3.eth.getChainId();
+        fromBlock = getStartOfPosBlock(chainId).number;
+    }
     const contracts = getPosContracts(web3, contractsType);
     const allEvents = [];
     for(const contract of contracts) {
