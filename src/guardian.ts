@@ -32,7 +32,7 @@ export async function getGuardiansCert(networkNodeUrls: string[]) {
 
 export async function getGuardians(networkNodeUrls: string[], ethNodeEndpoints: string[] = []): Promise<Guardian[]> {
     // Certificates for guardians are only available on Ethereum, so in order to fetch this data we need to pass ethNodeEndpoints
-    const guardiansCerts = ethNodeEndpoints ? await getGuardiansCert(ethNodeEndpoints) : {}
+    const guardiansCerts = ethNodeEndpoints.length ? await getGuardiansCert(ethNodeEndpoints) : {}
     let fullError = '';
     for(const url of networkNodeUrls) {
         try {
