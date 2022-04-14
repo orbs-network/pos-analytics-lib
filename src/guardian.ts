@@ -170,7 +170,7 @@ export async function getGuardianStakeAndDelegationChanges(address: string, ethS
     
     const balanceMap = await readBalances(_.keys(delegatorMap), web3);
     _.forOwn(delegatorMap, (v) => {
-        v.last_change_time = getBlockEstimatedTime(v.last_change_block);
+        v.last_change_time = getBlockEstimatedTime(v.last_change_block, chainId);
         v.non_stake = balanceMap[v.address];
     });
 
@@ -221,7 +221,7 @@ export async function getGuardianStakeActions(address: string, ethState:any, web
         });
 
         if(event.blockNumber < getStartOfDelegationBlock().number) {
-            stakesBeforeDelegation.push(generateStakeAction(event.blockNumber, getBlockEstimatedTime(event.blockNumber), 
+            stakesBeforeDelegation.push(generateStakeAction(event.blockNumber, getBlockEstimatedTime(event.blockNumber, chainId),
                 bigToNumber(totalStake), 0, bigToNumber(totalStake), 0));
         }
     }
@@ -243,6 +243,7 @@ export async function getGuardianRegisterationActions(address: string, ethState:
     const startBlock = getQueryPosBlock(options.read_from_block, ethState.block.number)
     const filter = [Topics.GuardianRegisterd, addressToTopic(address)];
     const events = await readContractEvents(filter, Contracts.Guardian, web3, startBlock);
+    const chainId = await web3.eth.getChainId();
 
     const actions: GuardianAction[] = [];    
     for (let event of events) {
@@ -250,7 +251,7 @@ export async function getGuardianRegisterationActions(address: string, ethState:
             contract: event.address.toLowerCase(),
             event: event.event,
             block_number: event.blockNumber,
-            block_time: getBlockEstimatedTime(event.blockNumber),
+            block_time: getBlockEstimatedTime(event.blockNumber, chainId),
             tx_hash: event.transactionHash,
             additional_info_link: generateTxLink(event.transactionHash),
         });
@@ -265,6 +266,7 @@ export async function getGuardianFeeAndBootstrap(address: string, ethState:any, 
     const fees: GuardianReward[] = [generateRewardItem(ethState.block.number, ethState.block.time, '', ethState.reward_status.fees_balance + ethState.reward_status.fees_claimed)];
     const bootstraps: GuardianReward[] = [generateRewardItem(ethState.block.number, ethState.block.time, '', ethState.reward_status.bootstrap_balance + ethState.reward_status.bootstrap_claimed)];
     const withdrawActions: GuardianAction[] = [];
+    const chainId = await web3.eth.getChainId();
 
     const filter = [[Topics.BootstrapRewardAssigned, Topics.FeeAssigned, Topics.BootstrapWithdrawn, Topics.FeeWithdrawn], addressToTopic(address)];
     const events = await readContractEvents(filter, Contracts.FeeBootstrapReward, web3, startBlock);
@@ -272,17 +274,17 @@ export async function getGuardianFeeAndBootstrap(address: string, ethState:any, 
 
     for (let event of events) {
         if (event.signature ===  Topics.BootstrapRewardAssigned) {
-            bootstraps.push(generateRewardItem(event.blockNumber, getBlockEstimatedTime(event.blockNumber), 
+            bootstraps.push(generateRewardItem(event.blockNumber, getBlockEstimatedTime(event.blockNumber, chainId),
                 event.transactionHash, bigToNumber(new BigNumber(event.returnValues.totalAwarded)))); 
         } else if (event.signature ===  Topics.FeeAssigned) {
-            fees.push(generateRewardItem(event.blockNumber, getBlockEstimatedTime(event.blockNumber), 
+            fees.push(generateRewardItem(event.blockNumber, getBlockEstimatedTime(event.blockNumber, chainId),
                 event.transactionHash, bigToNumber(new BigNumber(event.returnValues.totalAwarded)))); 
         } else if (event.signature ===  Topics.BootstrapWithdrawn || event.signature ===  Topics.FeeWithdrawn) {
             withdrawActions.push({
                 contract: event.address.toLowerCase(),
                 event: event.event,
                 block_number: event.blockNumber,
-                block_time: getBlockEstimatedTime(event.blockNumber),
+                block_time: getBlockEstimatedTime(event.blockNumber, chainId),
                 tx_hash: event.transactionHash,
                 additional_info_link: generateTxLink(event.transactionHash),
                 amount: bigToNumber(new BigNumber(event.returnValues.amount)),

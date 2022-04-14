@@ -28,6 +28,7 @@ export async function getOverview(networkNodeUrls: string[], ethereumEndpoint: s
 export async function getAllDelegators(ethereumEndpoint: string) {
     const web3 = _.isString(ethereumEndpoint) ? await getWeb3(ethereumEndpoint) : ethereumEndpoint;
     const events = await readContractEvents([Topics.Delegated], Contracts.Delegate, web3, getStartOfDelegationBlock().number);
+    const chainId = await web3.eth.getChainId();
 
     const delegatorMap: {[key:string]: Delegator} = {};
     for (let event of events) {
@@ -46,7 +47,7 @@ export async function getAllDelegators(ethereumEndpoint: string) {
     const balanceMap = await readBalances(_.keys(delegatorMap), web3);
     const stakeMap = await readStakes(_.keys(delegatorMap), web3);
     _.forOwn(delegatorMap, (v) => {
-        v.last_change_time = getBlockEstimatedTime(v.last_change_block);
+        v.last_change_time = getBlockEstimatedTime(v.last_change_block, chainId);
         v.non_stake = balanceMap[v.address];
         v.stake = stakeMap[v.address];
     });

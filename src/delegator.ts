@@ -9,13 +9,13 @@
 import _ from 'lodash';
 import BigNumber from "bignumber.js";
 import { bigToNumber, optionsStartFromText, parseOptions } from './helpers';
-import { addressToTopic, ascendingEvents, Contracts, generateTxLink, getBlockEstimatedTime, getQueryDelegationBlock, getQueryPosBlock, getStartOfPosBlock, getWeb3, readContractEvents, readDelegatorDataFromState, Topics } from "./eth-helpers";
+import { addressToTopic, ascendingEvents, Contracts, generateTxLink, getBlockEstimatedTime, getQueryDelegationBlock, getQueryPosBlock, getStartOfPosBlock, getWeb3, getWeb3Polygon, readContractEvents, readDelegatorDataFromState, Topics } from "./eth-helpers";
 import { DelegatorInfo, DelegatorAction, DelegatorReward, DelegatorStake, PosOptions } from "./model";
 import { getDelegatorRewardsStakingInternal, getRewardsClaimActions } from './rewards';
 
 export async function getDelegator(address: string, ethereumEndpoint: string | any, o?: PosOptions | any): Promise<DelegatorInfo> {
     const options = parseOptions(o);
-    const web3 = _.isString(ethereumEndpoint) ? await getWeb3(ethereumEndpoint) : ethereumEndpoint;  
+    const web3 = _.isString(ethereumEndpoint) ? options.is_polygon ? await getWeb3Polygon(ethereumEndpoint) : await getWeb3(ethereumEndpoint): ethereumEndpoint;
     const actions: DelegatorAction[] = [];
     let stakes: DelegatorStake[] = [];
     let rewards: DelegatorReward[] = [];
@@ -66,7 +66,8 @@ async function getStakeActions(address:string, ethState:any, web3:any, options: 
     let startBlock = getQueryPosBlock(options.read_from_block, ethState.block.number);
     const filter = [undefined /*don't filter event type*/, addressToTopic(address)];
     const events = await readContractEvents(filter, Contracts.Stake, web3, startBlock);
-    
+    const chainId = await web3.eth.getChainId();
+
     let totalStake = new BigNumber(0);
     let coolDownStake = new BigNumber(0);
     const stakeActions: DelegatorAction[] = [];
@@ -93,7 +94,7 @@ async function getStakeActions(address:string, ethState:any, web3:any, options: 
             default:
                 continue;
         }
-        const blockTime = getBlockEstimatedTime(event.blockNumber)
+        const blockTime = getBlockEstimatedTime(event.blockNumber, chainId)
         stakeActions.push({
             contract: event.address.toLowerCase(),
             event: event.event,
@@ -126,6 +127,7 @@ async function getDelegateActions(address:string, ethState:any, web3:any, option
     let startBlock = getQueryDelegationBlock(options.read_from_block, ethState.block.number);
     const filter = [Topics.Delegated, addressToTopic(address)];
     const events = await readContractEvents(filter, Contracts.Delegate, web3, startBlock);
+    const chainId = await web3.eth.getChainId();
 
     const delegateActions: DelegatorAction[] = [];
     
@@ -133,7 +135,7 @@ async function getDelegateActions(address:string, ethState:any, web3:any, option
         delegateActions.push({
             contract: event.address.toLowerCase(),
             event: event.event,
-            block_time: getBlockEstimatedTime(event.blockNumber),
+            block_time: getBlockEstimatedTime(event.blockNumber, chainId),
             block_number: event.blockNumber,
             tx_hash: event.transactionHash,
             additional_info_link: generateTxLink(event.transactionHash),

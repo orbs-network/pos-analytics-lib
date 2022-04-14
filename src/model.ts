@@ -10,6 +10,7 @@ export interface PosOptions {
     read_history: boolean;
     read_from_block: number;
     read_rewards_disable: boolean;
+    is_polygon: boolean;
 }
 
 export interface PosOverview {

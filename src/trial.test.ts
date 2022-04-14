@@ -15,14 +15,24 @@ export function toConsole(x:any){ return JSON.stringify(x, null, 2)}
 
 async function x() {
     const ethereumEndpoint = String(process.env.ETHEREUM_ENDPOINT);
+    const polygonEndpoint = String(process.env.POLYGON_ENDPOINT);
     const nodeEndpoints = [
         'https://0xcore.orbs.com/services/management-service/status',  // for actual production front-end with https
         'http://0xaudit.orbs.com/services/management-service/status', // for dev non https
     ];
 
     const totalTimeStart = Date.now();
- 
-    let s = Date.now();
+
+    let s = Date.now()
+    const delegatorFullInfoPolygon = await getDelegator('0x17Fe98A222c41217c51C823352537Dc542AD06eF', polygonEndpoint, {is_polygon: true});
+    console.log(`Polygon full delegator took ${(Date.now() - s) / 1000.0} seconds`);
+    const dFullfilepathPolygon = path.resolve(__dirname, `../data/delegator_full_poygon.json`);
+    fs.writeFileSync(dFullfilepathPolygon, toConsole(delegatorFullInfoPolygon));
+    const delegatorXlsxPolygon = delegatorToXlsx(delegatorFullInfoPolygon, 'buffer');
+    fs.writeFileSync(path.resolve(__dirname, `../data/delegator_full_polygon.xlsx`), delegatorXlsxPolygon);
+    // console.log(toConsole(delegatorFullInfoPolygon));
+
+    s = Date.now();
     const delegatorInfo = await getDelegator('0xB4D4f0E476Afe791B26B39985A65B1bC1BBAcdcA', ethereumEndpoint, {read_history: false});
     console.log(`fast delegator took ${(Date.now() - s) / 1000.0} seconds`);
     const dfilepath = path.resolve(__dirname, `../data/delegator.json`);   
