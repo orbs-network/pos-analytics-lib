@@ -159,7 +159,7 @@ export async function getGuardianStakeAndDelegationChanges(address: string, ethS
                 block_time: getBlockEstimatedTime(event.blockNumber, chainId),
                 block_number: event.blockNumber,
                 tx_hash: event.transactionHash,
-                additional_info_link: generateTxLink(event.transactionHash),
+                additional_info_link: generateTxLink(event.transactionHash, chainId),
                 to: toAddress,
             });
         }
@@ -215,7 +215,7 @@ export async function getGuardianStakeActions(address: string, ethState:any, web
             block_number: event.blockNumber,
             block_time: getBlockEstimatedTime(event.blockNumber, chainId),
             tx_hash: event.transactionHash,
-            additional_info_link: generateTxLink(event.transactionHash),
+            additional_info_link: generateTxLink(event.transactionHash, chainId),
             amount: bigToNumber(amount),
             current_stake: bigToNumber(totalStake)
         });
@@ -253,7 +253,7 @@ export async function getGuardianRegisterationActions(address: string, ethState:
             block_number: event.blockNumber,
             block_time: getBlockEstimatedTime(event.blockNumber, chainId),
             tx_hash: event.transactionHash,
-            additional_info_link: generateTxLink(event.transactionHash),
+            additional_info_link: generateTxLink(event.transactionHash, chainId),
         });
     }
 
@@ -262,11 +262,11 @@ export async function getGuardianRegisterationActions(address: string, ethState:
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getGuardianFeeAndBootstrap(address: string, ethState:any, web3:any, options: PosOptions) {
-    const startBlock = getQueryRewardsBlock(options.read_from_block, ethState.block.number)
-    const fees: GuardianReward[] = [generateRewardItem(ethState.block.number, ethState.block.time, '', ethState.reward_status.fees_balance + ethState.reward_status.fees_claimed)];
-    const bootstraps: GuardianReward[] = [generateRewardItem(ethState.block.number, ethState.block.time, '', ethState.reward_status.bootstrap_balance + ethState.reward_status.bootstrap_claimed)];
-    const withdrawActions: GuardianAction[] = [];
     const chainId = await web3.eth.getChainId();
+    const startBlock = getQueryRewardsBlock(options.read_from_block, ethState.block.number)
+    const fees: GuardianReward[] = [generateRewardItem(ethState.block.number, ethState.block.time, '', ethState.reward_status.fees_balance + ethState.reward_status.fees_claimed, chainId)];
+    const bootstraps: GuardianReward[] = [generateRewardItem(ethState.block.number, ethState.block.time, '', ethState.reward_status.bootstrap_balance + ethState.reward_status.bootstrap_claimed, chainId)];
+    const withdrawActions: GuardianAction[] = [];
 
     const filter = [[Topics.BootstrapRewardAssigned, Topics.FeeAssigned, Topics.BootstrapWithdrawn, Topics.FeeWithdrawn], addressToTopic(address)];
     const events = await readContractEvents(filter, Contracts.FeeBootstrapReward, web3, startBlock);
@@ -275,10 +275,10 @@ export async function getGuardianFeeAndBootstrap(address: string, ethState:any, 
     for (let event of events) {
         if (event.signature ===  Topics.BootstrapRewardAssigned) {
             bootstraps.push(generateRewardItem(event.blockNumber, getBlockEstimatedTime(event.blockNumber, chainId),
-                event.transactionHash, bigToNumber(new BigNumber(event.returnValues.totalAwarded)))); 
+                event.transactionHash, bigToNumber(new BigNumber(event.returnValues.totalAwarded)), chainId));
         } else if (event.signature ===  Topics.FeeAssigned) {
             fees.push(generateRewardItem(event.blockNumber, getBlockEstimatedTime(event.blockNumber, chainId),
-                event.transactionHash, bigToNumber(new BigNumber(event.returnValues.totalAwarded)))); 
+                event.transactionHash, bigToNumber(new BigNumber(event.returnValues.totalAwarded)), chainId));
         } else if (event.signature ===  Topics.BootstrapWithdrawn || event.signature ===  Topics.FeeWithdrawn) {
             withdrawActions.push({
                 contract: event.address.toLowerCase(),
@@ -286,7 +286,7 @@ export async function getGuardianFeeAndBootstrap(address: string, ethState:any, 
                 block_number: event.blockNumber,
                 block_time: getBlockEstimatedTime(event.blockNumber, chainId),
                 tx_hash: event.transactionHash,
-                additional_info_link: generateTxLink(event.transactionHash),
+                additional_info_link: generateTxLink(event.transactionHash, chainId),
                 amount: bigToNumber(new BigNumber(event.returnValues.amount)),
             });
         }
@@ -294,19 +294,19 @@ export async function getGuardianFeeAndBootstrap(address: string, ethState:any, 
 
     if (startBlock <= getStartOfRewardsBlock().number) {
         // fake 'start' of events
-        fees.push(generateRewardItem(getStartOfRewardsBlock().number, getStartOfRewardsBlock().time, '', 0));
-        bootstraps.push(generateRewardItem(getStartOfRewardsBlock().number, getStartOfRewardsBlock().time, '', 0));
+        fees.push(generateRewardItem(getStartOfRewardsBlock().number, getStartOfRewardsBlock().time, '', 0, chainId));
+        bootstraps.push(generateRewardItem(getStartOfRewardsBlock().number, getStartOfRewardsBlock().time, '', 0, chainId));
     }
 
     return { bootstraps, fees, withdrawActions };
 }
 
-function generateRewardItem(block_number: number, block_time: number, tx_hash: string, total_awarded: number) {
+function generateRewardItem(block_number: number, block_time: number, tx_hash: string, total_awarded: number, chainId: number) {
     return {
         block_number,
         block_time,
         tx_hash,
-        additional_info_link: tx_hash !== '' ? generateTxLink(tx_hash) : '',
+        additional_info_link: tx_hash !== '' ? generateTxLink(tx_hash, chainId) : '',
         total_awarded, 
     };
 }

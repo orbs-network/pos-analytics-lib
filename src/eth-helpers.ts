@@ -625,6 +625,6 @@ export function descendingBlockNumbers(e1:any, e2:any) {
     return e2.blockNumber - e1.blockNumber;
 }
 
-export function generateTxLink(txHash: string): string {
-    return `https://etherscan.io/tx/${txHash}`;
+export function generateTxLink(txHash: string, chainId: number = 1): string {
+    return chainId === 1 ? `https://etherscan.io/tx/${txHash}` : `https://polygonscan.com/tx/${txHash}`;
 }

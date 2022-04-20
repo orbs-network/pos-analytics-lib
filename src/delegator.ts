@@ -101,7 +101,7 @@ async function getStakeActions(address:string, ethState:any, web3:any, options: 
             block_number: event.blockNumber,
             block_time: blockTime,
             tx_hash: event.transactionHash,
-            additional_info_link: generateTxLink(event.transactionHash),
+            additional_info_link: generateTxLink(event.transactionHash, chainId),
             amount: bigToNumber(amount),
             current_stake: bigToNumber(totalStake),
         });
@@ -138,7 +138,7 @@ async function getDelegateActions(address:string, ethState:any, web3:any, option
             block_time: getBlockEstimatedTime(event.blockNumber, chainId),
             block_number: event.blockNumber,
             tx_hash: event.transactionHash,
-            additional_info_link: generateTxLink(event.transactionHash),
+            additional_info_link: generateTxLink(event.transactionHash, chainId),
             to: String(event.returnValues.to).toLowerCase(),
         });
     }

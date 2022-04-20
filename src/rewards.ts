@@ -147,7 +147,7 @@ function generateClaimAction(event:any, isGuardian:boolean, chainId: number) {
         block_number: event.blockNumber,
         block_time: getBlockEstimatedTime(event.blockNumber, chainId),
         tx_hash: event.transactionHash,
-        additional_info_link: generateTxLink(event.transactionHash),
+        additional_info_link: generateTxLink(event.transactionHash, chainId),
         amount: bigToNumber(new BigNumber(
             isGuardian ? event.returnValues.claimedGuardianRewards : event.returnValues.claimedDelegatorRewards)),
     }
@@ -265,7 +265,7 @@ function generateGuardianReward(blockNumber:number, txHash:string, totalAwarded:
         block_number: blockNumber,
         block_time: getBlockEstimatedTime(blockNumber, chainId),
         tx_hash: txHash,
-        additional_info_link: txHash !== '' ? generateTxLink(txHash) : '',
+        additional_info_link: txHash !== '' ? generateTxLink(txHash, chainId) : '',
         total_awarded: bigToNumber(totalAwarded), 
     }
 }
@@ -330,7 +330,7 @@ function generateDelegatorReward(blockNumber:number, txHash:string, guardian:str
         block_number: blockNumber,
         block_time: getBlockEstimatedTime(blockNumber, chainId),
         tx_hash: txHash,
-        additional_info_link: txHash !== '' ? generateTxLink(txHash) : '',
+        additional_info_link: txHash !== '' ? generateTxLink(txHash, chainId) : '',
         total_awarded: bigToNumber(totalAwarded), 
         guardian_from: guardian,
     }
