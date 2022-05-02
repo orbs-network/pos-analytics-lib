@@ -21,6 +21,7 @@ export async function getGuardianStakingRewards(address: string, ethereumEndpoin
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getGuardianRewardsStakingInternal(address: string, ethState:any, web3:any, options: PosOptions): Promise<{rewardsAsGuardian: GuardianReward[];rewardsAsDelegator: DelegatorReward[];claimActions: Action[];}> {
     const stateData = getStateData(address, ethState, options, true);
+    const chainId = await web3.eth.getChainId();
 
     // read events
     const txs: Promise<any>[] = [
@@ -31,19 +32,19 @@ export async function getGuardianRewardsStakingInternal(address: string, ethStat
 
     //sort and filter
     const {guardianEvents, delegatorEvents, delegationChanges} = filterRewardsEvents(res[0], stateData);
-    const claimActions = filterClaimActions(res[0], true);
+    const claimActions = filterClaimActions(res[0], true, chainId);
     const globalEvents = uniqueBlockEvents(res[1]);
 
     // generate rewards as Guardian
     let guardianRewardEvents = mergeAndUniqueOfTwoEventLists(guardianEvents, globalEvents);
-    const rewardsAsGuardian: GuardianReward[] = generateGuardianRewards(guardianRewardEvents, stateData);
+    const rewardsAsGuardian: GuardianReward[] = generateGuardianRewards(guardianRewardEvents, stateData, chainId);
  
     // generte rewards as Delegator
     if (delegationChanges.length !== 1) { // used to be a "real" delegator so need to find older guardians' events
         const allGuardiansEvents = await generateAllDelegatorGuardiansEvents(delegationChanges, web3);
         guardianRewardEvents = mergeAndUniqueOfTwoEventLists(allGuardiansEvents, globalEvents);
     }
-    const rewardsAsDelegator: DelegatorReward[] = generateDelegatorRewards(delegatorEvents, guardianRewardEvents, stateData);
+    const rewardsAsDelegator: DelegatorReward[] = generateDelegatorRewards(delegatorEvents, guardianRewardEvents, stateData, chainId);
 
     return { rewardsAsGuardian, rewardsAsDelegator, claimActions };
 }
@@ -57,6 +58,7 @@ export async function getDelegatorStakingRewards(address: string, ethereumEndpoi
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getDelegatorRewardsStakingInternal(address: string, ethState:any, web3:any, options: PosOptions): Promise<{rewards: DelegatorReward[];claimActions: Action[];}> {   
     const stateData = getStateData(address, ethState, options, false);
+    const chainId = await web3.eth.getChainId();
 
     // read all events
     let txs: Promise<any>[] = [
@@ -67,14 +69,14 @@ export async function getDelegatorRewardsStakingInternal(address: string, ethSta
 
     // sorting and filtering and separate to groups
     const {delegatorEvents, delegationChanges} = filterRewardsEvents(res[0], stateData);
-    const claimActions = filterClaimActions(res[0], false);
+    const claimActions = filterClaimActions(res[0], false, chainId);
     const globalEvents = uniqueBlockEvents(res[1]);
 
     const guardiansEvents = await generateAllDelegatorGuardiansEvents(delegationChanges, web3);
     const guardianAndGlobalEvents = mergeAndUniqueOfTwoEventLists(guardiansEvents, globalEvents);
 
     // generate the rewards
-    const rewards: DelegatorReward[] = generateDelegatorRewards(delegatorEvents, guardianAndGlobalEvents, stateData);
+    const rewards: DelegatorReward[] = generateDelegatorRewards(delegatorEvents, guardianAndGlobalEvents, stateData, chainId);
 
     return { rewards, claimActions };
 }
@@ -84,7 +86,8 @@ export async function getDelegatorRewardsStakingInternal(address: string, ethSta
 export async function getRewardsClaimActions(address: string, ethState:any, web3:any, options: PosOptions, isGuardian: boolean): Promise<{claimActions: Action[]}> {   
     const startBlock = getQueryRewardsBlock(options.read_from_block, ethState.block.number)
     const events = await readContractEvents([Topics.StakingRewardsClaimed, addressToTopic(address)], Contracts.Reward, web3, startBlock);
-    return {claimActions: filterClaimActions(events, isGuardian)};
+    const chainId = await web3.eth.getChainId();
+    return {claimActions: filterClaimActions(events, isGuardian, chainId)};
 }
 
 // creates 3 new lists:
@@ -124,27 +127,27 @@ function filterRewardsEvents(events:any[], stateData: RewardStateData) {
     return {guardianEvents, delegatorEvents, delegationChanges};
 }
 
-function filterClaimActions(events:any[], isGuardian: boolean): Action[] {   
+function filterClaimActions(events:any[], isGuardian: boolean, chainId: number): Action[] {
     const claimActions: Action[] = [];
     _.map(events, e => {
         if (e.signature === Topics.StakingRewardsClaimed) {
             if (isGuardian) {
-                claimActions.push(generateClaimAction(e, true));
+                claimActions.push(generateClaimAction(e, true, chainId));
             }
-            claimActions.push(generateClaimAction(e, false));
+            claimActions.push(generateClaimAction(e, false, chainId));
         }
     });
     return claimActions;
 }
 
-function generateClaimAction(event:any, isGuardian:boolean) {
+function generateClaimAction(event:any, isGuardian:boolean, chainId: number) {
     return {
         contract: event.address.toLowerCase(),
         event: (isGuardian ? 'Guardian' : 'Delegator') + event.event,
         block_number: event.blockNumber,
-        block_time: getBlockEstimatedTime(event.blockNumber),
+        block_time: getBlockEstimatedTime(event.blockNumber, chainId),
         tx_hash: event.transactionHash,
-        additional_info_link: generateTxLink(event.transactionHash),
+        additional_info_link: generateTxLink(event.transactionHash, chainId),
         amount: bigToNumber(new BigNumber(
             isGuardian ? event.returnValues.claimedGuardianRewards : event.returnValues.claimedDelegatorRewards)),
     }
@@ -216,7 +219,7 @@ function uniqueBlockEvents(events:any[]) {
     return events;
 }
 
-function generateGuardianRewards(events:any[], stateData: RewardStateData) {
+function generateGuardianRewards(events:any[], stateData: RewardStateData, chainId: number) {
     const rewardsAsGuardian: GuardianReward[] = [];
 
     let totalAwarded = stateData.gTotalAwarded;
@@ -225,7 +228,7 @@ function generateGuardianRewards(events:any[], stateData: RewardStateData) {
     let RPW =  stateData.gRPW;
 
     // from state 'fake now' reward event
-    rewardsAsGuardian.push(generateGuardianReward(stateData.endBlockNumber, '', totalAwarded))
+    rewardsAsGuardian.push(generateGuardianReward(stateData.endBlockNumber, '', totalAwarded, chainId))
 
     for (const event of events) {
         if (event.signature ===  Topics.GuardianRewardAssigned) {
@@ -246,28 +249,28 @@ function generateGuardianRewards(events:any[], stateData: RewardStateData) {
             deltaRPW = deltaRPW.minus(RPW).plus(currRPW);
             RPW = currRPW;
         }
-        rewardsAsGuardian.push(generateGuardianReward(event.blockNumber, event.transactionHash, totalAwarded));
+        rewardsAsGuardian.push(generateGuardianReward(event.blockNumber, event.transactionHash, totalAwarded, chainId));
     }
 
     if (stateData.startBlockNumber <= getStartOfRewardsBlock().number) {
         // fake 'start' of events
-        rewardsAsGuardian.push(generateGuardianReward(getStartOfRewardsBlock().number, '', new BigNumber(0)))
+        rewardsAsGuardian.push(generateGuardianReward(getStartOfRewardsBlock().number, '', new BigNumber(0), chainId))
     }
 
     return rewardsAsGuardian;
 }
 
-function generateGuardianReward(blockNumber:number, txHash:string, totalAwarded:BigNumber) {
+function generateGuardianReward(blockNumber:number, txHash:string, totalAwarded:BigNumber, chainId:number) {
     return {
         block_number: blockNumber,
-        block_time: getBlockEstimatedTime(blockNumber),
+        block_time: getBlockEstimatedTime(blockNumber, chainId),
         tx_hash: txHash,
-        additional_info_link: txHash !== '' ? generateTxLink(txHash) : '',
+        additional_info_link: txHash !== '' ? generateTxLink(txHash, chainId) : '',
         total_awarded: bigToNumber(totalAwarded), 
     }
 }
 
-function generateDelegatorRewards(delegatorEvents:any[], guardianGlobalEvents:any[], stateData: RewardStateData) {
+function generateDelegatorRewards(delegatorEvents:any[], guardianGlobalEvents:any[], stateData: RewardStateData, chainId:number) {
     const rewardsAsDelegator: DelegatorReward[] = [];
 
     delegatorEvents.sort(descendingBlockNumbers);
@@ -280,7 +283,7 @@ function generateDelegatorRewards(delegatorEvents:any[], guardianGlobalEvents:an
     let guardian = stateData.gAddress;
  
     // from state 'fake now' reward event
-    rewardsAsDelegator.push(generateDelegatorReward(stateData.endBlockNumber, '', guardian, totalAwarded))
+    rewardsAsDelegator.push(generateDelegatorReward(stateData.endBlockNumber, '', guardian, totalAwarded, chainId))
     
     let gDeltaRPTIndex = 0;
     for (const event of delegatorEvents) {
@@ -294,14 +297,14 @@ function generateDelegatorRewards(delegatorEvents:any[], guardianGlobalEvents:an
             if (!deltaRPT.isZero()) {
                 const deltaAwarded = nextBlockGuardianRPT.minus(guardianRPT).multipliedBy(awarded).dividedBy(deltaRPT);
                 totalAwarded = totalAwarded.minus(deltaAwarded);
-                rewardsAsDelegator.push(generateDelegatorReward(gRPTEvents[gDeltaRPTIndex].blockNumber, gRPTEvents[gDeltaRPTIndex].transactionHash, guardian, totalAwarded));
+                rewardsAsDelegator.push(generateDelegatorReward(gRPTEvents[gDeltaRPTIndex].blockNumber, gRPTEvents[gDeltaRPTIndex].transactionHash, guardian, totalAwarded, chainId));
             }
         }
         totalAwarded = new BigNumber(event.returnValues.totalAwarded);
         guardian = new String(event.returnValues.guardian).toLowerCase();
         awarded = new BigNumber(event.returnValues.amount);
         deltaRPT = new BigNumber(event.returnValues.delegatorRewardsPerTokenDelta);
-        rewardsAsDelegator.push(generateDelegatorReward(event.blockNumber, event.transactionHash, guardian, totalAwarded));
+        rewardsAsDelegator.push(generateDelegatorReward(event.blockNumber, event.transactionHash, guardian, totalAwarded, chainId));
     }
     // finish off left over guardian events
     if (!deltaRPT.isZero()) {
@@ -310,24 +313,24 @@ function generateDelegatorRewards(delegatorEvents:any[], guardianGlobalEvents:an
             guardianRPT = gRPTEvents[gDeltaRPTIndex].RPT;
             const deltaAwarded = nextBlockGuardianRPT.minus(guardianRPT).multipliedBy(awarded).dividedBy(deltaRPT);
             totalAwarded = totalAwarded.minus(deltaAwarded);
-            rewardsAsDelegator.push(generateDelegatorReward(gRPTEvents[gDeltaRPTIndex].blockNumber, gRPTEvents[gDeltaRPTIndex].transactionHash, guardian, totalAwarded));
+            rewardsAsDelegator.push(generateDelegatorReward(gRPTEvents[gDeltaRPTIndex].blockNumber, gRPTEvents[gDeltaRPTIndex].transactionHash, guardian, totalAwarded, chainId));
         }
     }
 
     if (stateData.startBlockNumber <= getStartOfRewardsBlock().number) {
         // fake 'start' of events
-        rewardsAsDelegator.push(generateDelegatorReward(getStartOfRewardsBlock().number, '', guardian, new BigNumber(0)));
+        rewardsAsDelegator.push(generateDelegatorReward(getStartOfRewardsBlock().number, '', guardian, new BigNumber(0), chainId));
     }
 
     return rewardsAsDelegator;
 }
 
-function generateDelegatorReward(blockNumber:number, txHash:string, guardian:string, totalAwarded:BigNumber) {
+function generateDelegatorReward(blockNumber:number, txHash:string, guardian:string, totalAwarded:BigNumber, chainId:number) {
     return {
         block_number: blockNumber,
-        block_time: getBlockEstimatedTime(blockNumber),
+        block_time: getBlockEstimatedTime(blockNumber, chainId),
         tx_hash: txHash,
-        additional_info_link: txHash !== '' ? generateTxLink(txHash) : '',
+        additional_info_link: txHash !== '' ? generateTxLink(txHash, chainId) : '',
         total_awarded: bigToNumber(totalAwarded), 
         guardian_from: guardian,
     }

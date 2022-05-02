@@ -12,6 +12,7 @@ import BigNumber from 'bignumber.js';
 // @ts-ignore
 import { aggregate } from '@makerdao/multicall';
 import { erc20Abi } from './abis/erc20';
+import { erc20PolygonAbi } from './abis/erc20-polygon';
 import { stakeAbi } from './abis/stake';
 import { delegationAbi } from './abis/delegation';
 import { guardianAbi } from './abis/guardian';
@@ -44,7 +45,6 @@ export enum Topics {
     GuardianUpdateMetaData = '0x1cf3d48eb5d849f59c9ee28edc1564cde8ca0e708ccaecf5416a48d3810c5657',
 }
 
-const MulticallContractAddress = '0xeefBa1e63905eF1D7ACbA5a8513c70307C1cE441';
 export enum Contracts {
     Erc20 = 'Erc20',
     Stake = 'Stake',
@@ -70,15 +70,40 @@ export async function getWeb3(ethereumEndpoint: string, readContracts:boolean = 
     web3.eth.transactionPollingTimeout = 0; // to stop web3 from polling pending tx
     web3.eth.transactionConfirmationBlocks = 1; // to stop web3 from polling pending tx
 
+    Object.assign(web3, {'multicallContractAddress': '0xeefBa1e63905eF1D7ACbA5a8513c70307C1cE441'});
     const contractsData: ContractsData = {};
     contractsData[Contracts.Delegate] = [];
     contractsData[Contracts.Reward] = [];
     contractsData[Contracts.FeeBootstrapReward] = [];
     contractsData[Contracts.Guardian] = [];
     contractsData[Contracts.Erc20] = [{address: '0xff56Cc6b1E6dEd347aA0B7676C85AB0B3D08B0FA', startBlock: 5710114, endBlock: 'latest', abi: erc20Abi}];
-    contractsData[Contracts.Stake] = [{address: '0x01D59Af68E2dcb44e04C50e05F62E7043F2656C3', startBlock: FirstPosv2BlockNumber, endBlock: 'latest', abi: stakeAbi}];
+    contractsData[Contracts.Stake] = [{address: '0x01D59Af68E2dcb44e04C50e05F62E7043F2656C3', startBlock: getStartOfPosBlock(1).number, endBlock: 'latest', abi: stakeAbi}];
     contractsData[Contracts.Registry] = [{address: '0xD859701C81119aB12A1e62AF6270aD2AE05c7AB3', startBlock: 11191400, endBlock: 'latest', abi: registryAbi /*getAbiByContractName(Contracts.Registry)*/ }];
     
+    if (readContracts) {
+        await readContractsAddresses(contractsData, web3)
+        Object.assign(web3, {contractsData});
+    }
+
+    return web3;
+}
+
+export async function getWeb3Polygon(ethereumEndpoint: string, readContracts:boolean = true) {
+    const web3 = new Web3(new Web3.providers.HttpProvider(ethereumEndpoint, {keepAlive: true,}));
+    web3.eth.transactionBlockTimeout = 0; // to stop web3 from polling pending tx
+    web3.eth.transactionPollingTimeout = 0; // to stop web3 from polling pending tx
+    web3.eth.transactionConfirmationBlocks = 1; // to stop web3 from polling pending tx
+
+    Object.assign(web3, {'multicallContractAddress': '0x11ce4B23bD875D7F5C6a31084f55fDe1e9A87507'});
+    const contractsData: ContractsData = {};
+    contractsData[Contracts.Delegate] = [];
+    contractsData[Contracts.Reward] = [];
+    contractsData[Contracts.FeeBootstrapReward] = [];
+    contractsData[Contracts.Guardian] = [];
+    contractsData[Contracts.Erc20] = [{address: '0x614389EaAE0A6821DC49062D56BDA3d9d45Fa2ff', startBlock: 14283390, endBlock: 'latest', abi: erc20PolygonAbi}];
+    contractsData[Contracts.Stake] = [{address: '0xeeae6791f684117b7028b48cb5dd21186df80b9c', startBlock: 25487295, endBlock: 'latest', abi: stakeAbi}];
+    contractsData[Contracts.Registry] = [{address: '0x35eA0D75b2a3aB06393749B4651DfAD1Ffd49A77', startBlock: 25502848, endBlock: 'latest', abi: registryAbi /*getAbiByContractName(Contracts.Registry)*/ }];
+
     if (readContracts) {
         await readContractsAddresses(contractsData, web3)
         Object.assign(web3, {contractsData});
@@ -111,18 +136,24 @@ export async function getCurrentBlockInfo(web3:Web3): Promise<BlockInfo> {
     return {time: Number(block.timestamp)-13, number: block.number-1 } // one block back to avoid provider jitter
 }
 
-export function getBlockEstimatedTime(blockNumber: number, refBlock?: BlockInfo) {
-    if (!_.isObject(refBlock)) {
-        refBlock = {time: 1603200055, number: 11093232 }
-    }
-    const avgBlockTime = (refBlock.time - FirstPosv2BlockTime) / (refBlock.number - FirstPosv2BlockNumber);
-    return FirstPosv2BlockTime + Math.round((blockNumber - FirstPosv2BlockNumber) * avgBlockTime);
+const refBlocksMap: {[chainId: number]: {time: number, number: number}} = {
+    1: {time: 1603200055, number: 11093232 },
+    137: {time: 1620563553, number: 14283390 }
 }
 
-const FirstPosv2BlockNumber = 9830000;
-const FirstPosv2BlockTime = 1586328645;
-export function getStartOfPosBlock(): BlockInfo {
-    return {number: FirstPosv2BlockNumber, time: FirstPosv2BlockTime };
+export function getBlockEstimatedTime(blockNumber: number, chainId: number = 1) {
+    const refBlock = refBlocksMap[chainId];
+    const blockInfo = getStartOfPosBlock(chainId);
+    const avgBlockTime = (refBlock.time - blockInfo.time) / (refBlock.number - blockInfo.number);
+    return blockInfo.time + Math.round((blockNumber - blockInfo.number) * avgBlockTime);
+}
+
+export function getStartOfPosBlock(chainId: number = 1): BlockInfo {
+    const blocksMap: {[chainId: string]: {time: number, number: number}} = {
+        1: {time: 1586328645, number: 9830000 },
+        137: {time: 1646207643, number: 25487295 }
+    }
+    return blocksMap[chainId];
 }
 
 export function getQueryPosBlock(potentialStart: number, nowBlock: number): number {
@@ -130,7 +161,7 @@ export function getQueryPosBlock(potentialStart: number, nowBlock: number): numb
     return Math.max(getStartOfPosBlock().number, potentialStart < 0 ? nowBlock+potentialStart : potentialStart);
 }
 
-export function getStartOfRewardsBlock(): BlockInfo {
+export function getStartOfRewardsBlock(): BlockInfo { // TODO: add support for Polygon
     return {number: 11191407, time: 1604459620 };
 }
 
@@ -139,7 +170,7 @@ export function getQueryRewardsBlock(potentialStart: number, nowBlock: number): 
     return Math.max(getStartOfRewardsBlock().number, potentialStart < 0 ? nowBlock+potentialStart : potentialStart);
 }
 
-export function getStartOfDelegationBlock(): BlockInfo {
+export function getStartOfDelegationBlock(): BlockInfo { // TODO: add support for Polygon
     return {number: 11191403, time: 1604459583 };
 }
 
@@ -158,7 +189,7 @@ function multicallToBlockInfo(multiCallRes: any): BlockInfo {
 
 // Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
 export async function readBalances(addresses:string[], web3:any) {
-    const config = { web3, multicallAddress: MulticallContractAddress};
+    const config = { web3, multicallAddress: web3.multicallContractAddress};
     const currentErc20Address = web3.contractsData[Contracts.Erc20][0].address;
     const calls: any[] = [];
 
@@ -175,7 +206,7 @@ export async function readBalances(addresses:string[], web3:any) {
 
 // Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
 export async function readStakes(addresses:string[], web3:any) {
-    const config = { web3, multicallAddress: MulticallContractAddress};
+    const config = { web3, multicallAddress: web3.multicallContractAddress};
     const currentStakeAddress = web3.contractsData[Contracts.Stake][0].address;
     const calls: any[] = [];
 
@@ -192,7 +223,7 @@ export async function readStakes(addresses:string[], web3:any) {
 
 // Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
 export async function readOverviewDataFromState(web3:any) {
-    const config = { web3, multicallAddress: MulticallContractAddress};
+    const config = { web3, multicallAddress: web3.multicallContractAddress};
     const delegateAddress = getLatestPosContractAddress(web3, Contracts.Delegate);
     const stakeAddress = getLatestPosContractAddress(web3, Contracts.Stake);
     const calls: any[] = [
@@ -221,7 +252,7 @@ const balance = 'b', staked = 's', cooldownStake = 'cooldownStake', cooldownTime
 const dRewardBalance = 'dRewardBalance', dRewardClaim = 'dRewardClaim', dGuardian = 'dGuardian', dRPT = 'dRPT', dDeltaRPT = 'dDeltaRPT';
 // Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
 async function readDelegatorState(address:string, web3:any) {
-    const config = { web3, multicallAddress: MulticallContractAddress};
+    const config = { web3, multicallAddress: web3.multicallContractAddress};
     const erc20Address = getLatestPosContractAddress(web3, Contracts.Erc20);
     const stakeAddress = getLatestPosContractAddress(web3, Contracts.Stake);
     const rewardAddress = getLatestPosContractAddress(web3, Contracts.Reward);
@@ -294,7 +325,7 @@ const gRewardBalance = 'gRewardBalance', gRewardClaim = 'gRewardClaim', gLastRew
 const gFeeBalance = 'gFeeBalance', gFeeWithdraw = 'gFeeWithdraw', gBootBalance = 'gBootBalance', gBootWithdraw = 'gBootWithdraw', gCertified = 'gCertified';
 // Function depends on version 0.11.0 of makderdao/multicall only on 'latest' block
 async function readGuardianState(address:string, web3:any) {
-    const config = { web3, multicallAddress: MulticallContractAddress};
+    const config = { web3, multicallAddress: web3.multicallContractAddress};
     const erc20Address = getLatestPosContractAddress(web3, Contracts.Erc20);
     const stakeAddress = getLatestPosContractAddress(web3, Contracts.Stake);
     const rewardAddress = getLatestPosContractAddress(web3, Contracts.Reward);
@@ -457,7 +488,11 @@ export function addressToTopic(address:string) {
     return '0x000000000000000000000000' + address.substr(2).toLowerCase();
 }
 
-export async function readContractEvents(filter: (string[] | string | undefined)[], contractsType:Contracts, web3:Web3, fromBlock:number = FirstPosv2BlockNumber, toBlock:number|string = 'latest') {
+export async function readContractEvents(filter: (string[] | string | undefined)[], contractsType:Contracts, web3:Web3, fromBlock?:number, toBlock:number|string = 'latest') {
+    if (!fromBlock) {
+        const chainId = await web3.eth.getChainId();
+        fromBlock = getStartOfPosBlock(chainId).number;
+    }
     const contracts = getPosContracts(web3, contractsType);
     const allEvents = [];
     for(const contract of contracts) {
@@ -590,6 +625,6 @@ export function descendingBlockNumbers(e1:any, e2:any) {
     return e2.blockNumber - e1.blockNumber;
 }
 
-export function generateTxLink(txHash: string): string {
-    return `https://etherscan.io/tx/${txHash}`;
+export function generateTxLink(txHash: string, chainId: number = 1): string {
+    return chainId === 1 ? `https://etherscan.io/tx/${txHash}` : `https://polygonscan.com/tx/${txHash}`;
 }

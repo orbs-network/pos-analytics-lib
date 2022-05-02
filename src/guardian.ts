@@ -13,8 +13,27 @@ import { addressToTopic, ascendingEvents, Contracts, getBlockEstimatedTime, gene
 import { Guardian, GuardianInfo, GuardianDelegator, GuardianReward, GuardianStake, GuardianAction, DelegatorReward, PosOptions } from './model';
 import { getGuardianRewardsStakingInternal, getRewardsClaimActions } from './rewards';
 
-export async function getGuardians(networkNodeUrls: string[]): Promise<Guardian[]> {
-    let fullError = ''; 
+export async function getGuardiansCert(networkNodeUrls: string[]) {
+    let fullError = '';
+    let certs: {[key: string]: boolean } = {}
+    for (const url of networkNodeUrls) {
+        try {
+            const rawData = await fetchJson(url);
+            _.forEach(rawData.Payload.Guardians, guardian => {
+                certs[guardian.Name] = guardian?.IdentityType === 1;
+            });
+            return certs;
+        } catch (e) {
+            fullError += `Warning: access to URL ${url} failed, trying another. Error: ${e}\n`;
+        }
+    }
+    throw new Error(`Error while checking Guardians, all Network Node URL failed to respond. ${fullError}`);
+}
+
+export async function getGuardians(networkNodeUrls: string[], ethNodeEndpoints: string[] = []): Promise<Guardian[]> {
+    // Certificates for guardians are only available on Ethereum, so in order to fetch this data we need to pass ethNodeEndpoints
+    const guardiansCerts = ethNodeEndpoints.length ? await getGuardiansCert(ethNodeEndpoints) : {}
+    let fullError = '';
     for(const url of networkNodeUrls) {
         try {
             const rawData = await fetchJson(url);
@@ -25,7 +44,7 @@ export async function getGuardians(networkNodeUrls: string[]): Promise<Guardian[
                     website: guardian.Website, 
                     effective_stake: Number(guardian?.EffectiveStake || 0),
                     ip: guardian?.Ip || '',
-                    certified: guardian?.IdentityType === 1,
+                    certified: guardiansCerts[guardian.Name] || guardian?.IdentityType === 1,
                 }
             });
         } catch (e) {
@@ -113,8 +132,8 @@ export async function getGuardianStakeAndDelegationChanges(address: string, ethS
     const delegatorMap: {[key:string]: GuardianDelegator} = {};
     const delegationStakes: GuardianStake[] = [];
     const delegateActions: GuardianAction[] = [];
-    events.sort(ascendingEvents); 
-    
+    events.sort(ascendingEvents);
+    const chainId = await web3.eth.getChainId();
     for (let event of events) {
         if (event.signature === Topics.DelegateStakeChanged) {
             const delegatorAddress = event.returnValues.delegator.toLowerCase();
@@ -131,16 +150,16 @@ export async function getGuardianStakeAndDelegationChanges(address: string, ethS
             const selfDelegate = new BigNumber(event.returnValues.selfDelegatedStake);
             const allStake = new BigNumber(event.returnValues.delegatedStake);
                 
-            addOrUpdateStakeList(delegationStakes, event.blockNumber, bigToNumber(selfDelegate), bigToNumber(allStake.minus(selfDelegate)), _.size(delegatorMap));
+            addOrUpdateStakeList(delegationStakes, event.blockNumber, bigToNumber(selfDelegate), bigToNumber(allStake.minus(selfDelegate)), _.size(delegatorMap), chainId);
         } else if (event.signature === Topics.Delegated) {
             const toAddress = String(event.returnValues.to).toLowerCase();
             delegateActions.push({
                 contract: event.address.toLowerCase(),
                 event: toAddress === address.toLowerCase() ? 'SelfDelegated' : event.event,
-                block_time: getBlockEstimatedTime(event.blockNumber),
+                block_time: getBlockEstimatedTime(event.blockNumber, chainId),
                 block_number: event.blockNumber,
                 tx_hash: event.transactionHash,
-                additional_info_link: generateTxLink(event.transactionHash),
+                additional_info_link: generateTxLink(event.transactionHash, chainId),
                 to: toAddress,
             });
         }
@@ -151,14 +170,14 @@ export async function getGuardianStakeAndDelegationChanges(address: string, ethS
     
     const balanceMap = await readBalances(_.keys(delegatorMap), web3);
     _.forOwn(delegatorMap, (v) => {
-        v.last_change_time = getBlockEstimatedTime(v.last_change_block);
+        v.last_change_time = getBlockEstimatedTime(v.last_change_block, chainId);
         v.non_stake = balanceMap[v.address];
     });
 
     return { delegationStakes, delegatorMap, delegateActions };
 }
 
-function addOrUpdateStakeList(stakes: GuardianStake[], blockNumber: number, selfStake: number, delegateStake: number, nDelegators: number) {
+function addOrUpdateStakeList(stakes: GuardianStake[], blockNumber: number, selfStake: number, delegateStake: number, nDelegators: number, chainId: number) {
     if (stakes.length > 0 && stakes[stakes.length-1].block_number == blockNumber) {
         const curr = stakes[stakes.length-1];
         curr.self_stake = selfStake;
@@ -166,7 +185,7 @@ function addOrUpdateStakeList(stakes: GuardianStake[], blockNumber: number, self
         curr.total_stake = selfStake + delegateStake;
         curr.n_delegates = nDelegators;
     } else {
-        stakes.push(generateStakeAction(blockNumber, getBlockEstimatedTime(blockNumber), 
+        stakes.push(generateStakeAction(blockNumber, getBlockEstimatedTime(blockNumber, chainId),
             selfStake, delegateStake, selfStake + delegateStake, nDelegators));
     }
 }
@@ -180,7 +199,8 @@ export async function getGuardianStakeActions(address: string, ethState:any, web
 
     let totalStake = new BigNumber(0);
     const stakesBeforeDelegation: GuardianStake[] = [];
-    const stakeActions: GuardianAction[] = [];    
+    const stakeActions: GuardianAction[] = [];
+    const chainId = await web3.eth.getChainId();
     for (let event of events) {
         const amount = new BigNumber(event.returnValues.amount);
         if (event.signature === Topics.Staked || event.signature === Topics.Restaked) {
@@ -193,15 +213,15 @@ export async function getGuardianStakeActions(address: string, ethState:any, web
             contract: event.address.toLowerCase(),
             event: event.event,
             block_number: event.blockNumber,
-            block_time: getBlockEstimatedTime(event.blockNumber),
+            block_time: getBlockEstimatedTime(event.blockNumber, chainId),
             tx_hash: event.transactionHash,
-            additional_info_link: generateTxLink(event.transactionHash),
+            additional_info_link: generateTxLink(event.transactionHash, chainId),
             amount: bigToNumber(amount),
             current_stake: bigToNumber(totalStake)
         });
 
         if(event.blockNumber < getStartOfDelegationBlock().number) {
-            stakesBeforeDelegation.push(generateStakeAction(event.blockNumber, getBlockEstimatedTime(event.blockNumber), 
+            stakesBeforeDelegation.push(generateStakeAction(event.blockNumber, getBlockEstimatedTime(event.blockNumber, chainId),
                 bigToNumber(totalStake), 0, bigToNumber(totalStake), 0));
         }
     }
@@ -223,6 +243,7 @@ export async function getGuardianRegisterationActions(address: string, ethState:
     const startBlock = getQueryPosBlock(options.read_from_block, ethState.block.number)
     const filter = [Topics.GuardianRegisterd, addressToTopic(address)];
     const events = await readContractEvents(filter, Contracts.Guardian, web3, startBlock);
+    const chainId = await web3.eth.getChainId();
 
     const actions: GuardianAction[] = [];    
     for (let event of events) {
@@ -230,9 +251,9 @@ export async function getGuardianRegisterationActions(address: string, ethState:
             contract: event.address.toLowerCase(),
             event: event.event,
             block_number: event.blockNumber,
-            block_time: getBlockEstimatedTime(event.blockNumber),
+            block_time: getBlockEstimatedTime(event.blockNumber, chainId),
             tx_hash: event.transactionHash,
-            additional_info_link: generateTxLink(event.transactionHash),
+            additional_info_link: generateTxLink(event.transactionHash, chainId),
         });
     }
 
@@ -241,9 +262,10 @@ export async function getGuardianRegisterationActions(address: string, ethState:
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getGuardianFeeAndBootstrap(address: string, ethState:any, web3:any, options: PosOptions) {
+    const chainId = await web3.eth.getChainId();
     const startBlock = getQueryRewardsBlock(options.read_from_block, ethState.block.number)
-    const fees: GuardianReward[] = [generateRewardItem(ethState.block.number, ethState.block.time, '', ethState.reward_status.fees_balance + ethState.reward_status.fees_claimed)];
-    const bootstraps: GuardianReward[] = [generateRewardItem(ethState.block.number, ethState.block.time, '', ethState.reward_status.bootstrap_balance + ethState.reward_status.bootstrap_claimed)];
+    const fees: GuardianReward[] = [generateRewardItem(ethState.block.number, ethState.block.time, '', ethState.reward_status.fees_balance + ethState.reward_status.fees_claimed, chainId)];
+    const bootstraps: GuardianReward[] = [generateRewardItem(ethState.block.number, ethState.block.time, '', ethState.reward_status.bootstrap_balance + ethState.reward_status.bootstrap_claimed, chainId)];
     const withdrawActions: GuardianAction[] = [];
 
     const filter = [[Topics.BootstrapRewardAssigned, Topics.FeeAssigned, Topics.BootstrapWithdrawn, Topics.FeeWithdrawn], addressToTopic(address)];
@@ -252,19 +274,19 @@ export async function getGuardianFeeAndBootstrap(address: string, ethState:any, 
 
     for (let event of events) {
         if (event.signature ===  Topics.BootstrapRewardAssigned) {
-            bootstraps.push(generateRewardItem(event.blockNumber, getBlockEstimatedTime(event.blockNumber), 
-                event.transactionHash, bigToNumber(new BigNumber(event.returnValues.totalAwarded)))); 
+            bootstraps.push(generateRewardItem(event.blockNumber, getBlockEstimatedTime(event.blockNumber, chainId),
+                event.transactionHash, bigToNumber(new BigNumber(event.returnValues.totalAwarded)), chainId));
         } else if (event.signature ===  Topics.FeeAssigned) {
-            fees.push(generateRewardItem(event.blockNumber, getBlockEstimatedTime(event.blockNumber), 
-                event.transactionHash, bigToNumber(new BigNumber(event.returnValues.totalAwarded)))); 
+            fees.push(generateRewardItem(event.blockNumber, getBlockEstimatedTime(event.blockNumber, chainId),
+                event.transactionHash, bigToNumber(new BigNumber(event.returnValues.totalAwarded)), chainId));
         } else if (event.signature ===  Topics.BootstrapWithdrawn || event.signature ===  Topics.FeeWithdrawn) {
             withdrawActions.push({
                 contract: event.address.toLowerCase(),
                 event: event.event,
                 block_number: event.blockNumber,
-                block_time: getBlockEstimatedTime(event.blockNumber),
+                block_time: getBlockEstimatedTime(event.blockNumber, chainId),
                 tx_hash: event.transactionHash,
-                additional_info_link: generateTxLink(event.transactionHash),
+                additional_info_link: generateTxLink(event.transactionHash, chainId),
                 amount: bigToNumber(new BigNumber(event.returnValues.amount)),
             });
         }
@@ -272,19 +294,19 @@ export async function getGuardianFeeAndBootstrap(address: string, ethState:any, 
 
     if (startBlock <= getStartOfRewardsBlock().number) {
         // fake 'start' of events
-        fees.push(generateRewardItem(getStartOfRewardsBlock().number, getStartOfRewardsBlock().time, '', 0));
-        bootstraps.push(generateRewardItem(getStartOfRewardsBlock().number, getStartOfRewardsBlock().time, '', 0));
+        fees.push(generateRewardItem(getStartOfRewardsBlock().number, getStartOfRewardsBlock().time, '', 0, chainId));
+        bootstraps.push(generateRewardItem(getStartOfRewardsBlock().number, getStartOfRewardsBlock().time, '', 0, chainId));
     }
 
     return { bootstraps, fees, withdrawActions };
 }
 
-function generateRewardItem(block_number: number, block_time: number, tx_hash: string, total_awarded: number) {
+function generateRewardItem(block_number: number, block_time: number, tx_hash: string, total_awarded: number, chainId: number) {
     return {
         block_number,
         block_time,
         tx_hash,
-        additional_info_link: tx_hash !== '' ? generateTxLink(tx_hash) : '',
+        additional_info_link: tx_hash !== '' ? generateTxLink(tx_hash, chainId) : '',
         total_awarded, 
     };
 }

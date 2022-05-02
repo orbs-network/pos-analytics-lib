@@ -58,11 +58,13 @@ export function parseOptions(input?: any): PosOptions {
   const read_history = input?.read_history === undefined ? true : new Boolean(input.read_history).valueOf();
   const read_from_block = _.isNumber(input?.read_from_block) ? new Number(input.read_from_block).valueOf() : 0;
   const read_rewards_disable = new Boolean(input?.read_rewards_disable).valueOf(); // default is to read
+  const is_polygon = input?.is_polygon;
 
   return {
     read_history,
     read_from_block,
-    read_rewards_disable
+    read_rewards_disable,
+    is_polygon
   };
 }
 
