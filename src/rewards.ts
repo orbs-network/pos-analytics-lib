@@ -9,7 +9,7 @@
 import _ from 'lodash';
 import BigNumber from 'bignumber.js';
 import { bigToNumber, parseOptions } from './helpers';
-import { addressToTopic, ascendingEvents, Contracts, descendingBlockNumbers, generateTxLink, getBlockEstimatedTime, getQueryRewardsBlock, getStartOfRewardsBlock, getWeb3, readContractEvents, readDelegatorDataFromState, readGuardianDataFromState, Topics } from "./eth-helpers";
+import { addressToTopic, ascendingEvents, descendingEvents, Contracts, descendingBlockNumbers, generateTxLink, getBlockEstimatedTime, getQueryRewardsBlock, getStartOfRewardsBlock, getWeb3, readContractEvents, readDelegatorDataFromState, readGuardianDataFromState, Topics } from "./eth-helpers";
 import { Action, DelegatorReward, GuardianReward, PosOptions} from './model';
 
 export async function getGuardianStakingRewards(address: string, ethereumEndpoint: string | any, options?: PosOptions | any): Promise<{rewardsAsGuardian: GuardianReward[];rewardsAsDelegator: DelegatorReward[];claimActions: Action[];}> {
@@ -95,7 +95,7 @@ export async function getRewardsClaimActions(address: string, ethState:any, web3
 // delegatorAssign (only first in each block)
 // delegationChanges list of all the guardians and from/to of delegation
 function filterRewardsEvents(events:any[], stateData: RewardStateData) {
-    events.sort(ascendingEvents);
+    events.sort(descendingEvents);
     const guardianEvents: any[] = [];
     const delegatorEvents: any[] = [];
     const delegationChanges: DelegatorGuardianTransitions[] = [];
@@ -107,12 +107,12 @@ function filterRewardsEvents(events:any[], stateData: RewardStateData) {
     for(const event of events) {
         if (event.signature === Topics.GuardianRewardAssigned) {
             const last = guardianEvents.length;
-            if (last === 0 || guardianEvents[last-1].blockNumber < event.blockNumber) {
+            if (last === 0 || guardianEvents[last-1].blockNumber > event.blockNumber) {
                 guardianEvents.push(event);
             }
         } else if (event.signature === Topics.DelegatorRewardAssigned) {
             const last = delegatorEvents.length;
-            if (last === 0 || delegatorEvents[last-1].blockNumber < event.blockNumber) {
+            if (last === 0 || delegatorEvents[last-1].blockNumber > event.blockNumber) {
                 delegatorEvents.push(event);
                 const guardian = new String(event.returnValues.guardian).toLowerCase();
                 if (delegationChanges[dChangeIndex].guardianAddress !== guardian) {
