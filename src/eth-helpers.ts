@@ -141,8 +141,8 @@ const refBlocksMap: {[chainId: number]: {time: number, number: number}} = {
     137: {time: 1620563553, number: 14283390 }
 }
 
-export function getBlockEstimatedTime(blockNumber: number, chainId: number = 1) {
-    const refBlock = refBlocksMap[chainId];
+export function getBlockEstimatedTime(blockNumber: number, chainId: number = 1, refBlocks? : {[chainId: number]: {time: number, number: number}}) {
+    const refBlock = refBlocks? refBlocks[chainId] : refBlocksMap[chainId];
     const blockInfo = getStartOfPosBlock(chainId);
     const avgBlockTime = (refBlock.time - blockInfo.time) / (refBlock.number - blockInfo.number);
     return blockInfo.time + Math.round((blockNumber - blockInfo.number) * avgBlockTime);
@@ -154,6 +154,17 @@ export function getStartOfPosBlock(chainId: number = 1): BlockInfo {
         137: {time: 1646207643, number: 25487295 }
     }
     return blocksMap[chainId];
+}
+
+export async function getRefBlocks(web3Instances: Web3[]) {
+    // creates a reference for estimating actions time
+    let blocksMap: {[chainId: string]: {time: number, number: number}} = {}
+    for (const web3 of web3Instances) {
+        const chainId = await web3.eth.getChainId();
+        const blockInfo = await web3.eth.getBlock("latest")
+        blocksMap[chainId] = {"time": Number(blockInfo.timestamp), "number": blockInfo.number}
+    }
+    return blocksMap;
 }
 
 export function getQueryPosBlock(potentialStart: number, nowBlock: number): number {
