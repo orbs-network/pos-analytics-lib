@@ -519,19 +519,19 @@ export async function readEvents(filter: (string[] | string | undefined)[], cont
         let options = {topics: filter, fromBlock: startBlock, toBlock: endBlock};
         return await contract.getPastEvents('allEvents', options);
     } catch (e) {
-        if (pace <= 10) {
+        if (pace <= 100) {
             throw new Error('looking for events slowed down to 10 - fail')
         }
         if (typeof endBlock === 'string') {
             const block = await getCurrentBlockInfo(web3);
             endBlock = block.number;
         }
-        console.log('\x1b[36m%s\x1b[0m', `read events slowing down to ${pace}`);
+        console.log('\x1b[36m%s\x1b[0m', `read events slowing down to ${Math.round(pace/2)}`);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const results:any = [];
         for(let i = startBlock; i < endBlock; i+=pace) {
             const currentEnd = i+pace > endBlock ? endBlock : i+pace;
-            results.push(...await readEvents(filter, contract, web3, i, currentEnd, pace/10));
+            results.push(...await readEvents(filter, contract, web3, i, currentEnd, Math.round(pace/2)));
         }
         console.log('\x1b[36m%s\x1b[0m', `read events slowing down ended`);
         return results;
