@@ -64,6 +64,8 @@ interface ContractValidData {
 
 interface ContractsData {[key:string]: ContractValidData[]};
 
+const maxPace = 4000000;
+
 export async function getWeb3(ethereumEndpoint: string, readContracts:boolean = true) {
    const web3 = new Web3(new Web3.providers.HttpProvider(ethereumEndpoint, {keepAlive: true,}));
     web3.eth.transactionBlockTimeout = 0; // to stop web3 from polling pending tx
@@ -507,7 +509,7 @@ export async function readContractEvents(filter: (string[] | string | undefined)
     const contracts = getPosContracts(web3, contractsType);
     const allEvents = [];
     for(const contract of contracts) {
-        const events = await readEvents(filter, contract, web3, fromBlock, toBlock, 100000);
+        const events = await readEvents(filter, contract, web3, fromBlock, toBlock, maxPace);
         allEvents.push(...events);
     }
     return allEvents;
@@ -519,26 +521,24 @@ export async function readEvents(filter: (string[] | string | undefined)[], cont
         let options = {topics: filter, fromBlock: startBlock, toBlock: endBlock};
         return await contract.getPastEvents('allEvents', options);
     } catch (e) {
-        if (`${e}`.includes('query returned more than')) {
-            if (pace <= 10) {
-                throw new Error('looking for events slowed down to 10 - fail')
-            }
-            if (typeof endBlock === 'string') {
-                const block = await getCurrentBlockInfo(web3);
-                endBlock = block.number;
-            }
-            console.log('\x1b[36m%s\x1b[0m', `read events slowing down to ${pace}`);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const results:any = [];
-            for(let i = startBlock; i < endBlock; i+=pace) {
-                const currentEnd = i+pace > endBlock ? endBlock : i+pace;
-                results.push(...await readEvents(filter, contract, web3, i, currentEnd, pace/10));
-            }
-            console.log('\x1b[36m%s\x1b[0m', `read events slowing down ended`);
-            return results;
-        } else {
-            throw e;
+        pace = Math.round(pace*0.9);
+        if (pace <= 100) {
+            throw new Error(`looking for events slowed down below ${pace} - fail`)
         }
+        if (typeof endBlock === 'string') {
+            const block = await getCurrentBlockInfo(web3);
+            endBlock = block.number;
+        }
+        console.log('\x1b[36m%s\x1b[0m', `read events slowing down to ${pace}`);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const results:any = [];
+        for(let i = startBlock; i < endBlock; i+=pace) {
+            const currentEnd = i+pace > endBlock ? endBlock : i+pace;
+            results.push(...await readEvents(filter, contract, web3, i, currentEnd, pace));
+            pace = maxPace;
+        }
+        console.log('\x1b[36m%s\x1b[0m', `read events slowing down ended`);
+        return results;
     }
 }
 
