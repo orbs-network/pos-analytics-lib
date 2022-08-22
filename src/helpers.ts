@@ -8,7 +8,6 @@
 
 import _ from 'lodash';
 import BigNumber from 'bignumber.js';
-import fetch from 'node-fetch';
 import { retry } from 'ts-retry-promise';
 import { PosOptions } from './model';
 
@@ -25,7 +24,7 @@ export function getCurrentClockTime() {
 export async function fetchJson(url: string) {
   return retry(
     async () => {
-      const response = await fetch(url, { timeout: 5000 });
+      const response = await fetch(url);
       if (response.ok && String(response.headers.get('content-type')).toLowerCase().includes('application/json')) {
         try {
           const res = await response.json();

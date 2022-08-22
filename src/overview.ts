@@ -22,7 +22,7 @@ export async function getOverview(networkNodeUrls: string[], ethereumEndpoint: s
         }
     }
 
-    throw new Error(`Error while creating list of Guardians, all Netowrk Node URL failed to respond. ${fullError}`);
+    throw new Error(`Error while creating list of Guardians, all Network Node URL failed to respond. ${fullError}`);
 }
 
 export async function getAllDelegators(ethereumEndpoint: string) {
