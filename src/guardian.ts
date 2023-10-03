@@ -124,6 +124,14 @@ export async function getGuardian(address: string, ethereumEndpoint: string | an
     };
 }
 
+export async function getDelegators(address: string, ethereumEndpoint: string | any, refBlock?:{[chainId: number]: {time: number, number: number}}) {
+    const web3 = _.isString(ethereumEndpoint) ? await getWeb3(ethereumEndpoint) : ethereumEndpoint;
+    let ethData = await readGuardianDataFromState(address, web3);
+    const delegationChanges = await getGuardianStakeAndDelegationChanges(address, ethData, web3, refBlock)
+    const delegatorMap: {[key:string]: GuardianDelegator} = delegationChanges.delegatorMap
+    return _.map(_.pickBy(delegatorMap, (d) => {return d.stake !== 0}), v => v).sort((n1:any, n2:any) => n2.stake - n1.stake);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getGuardianStakeAndDelegationChanges(address: string, ethState:any, web3:any, refBlock?:{[chainId: number]: {time: number, number: number}}) {
     const filter = [[Topics.DelegateStakeChanged, Topics.Delegated], addressToTopic(address)];
