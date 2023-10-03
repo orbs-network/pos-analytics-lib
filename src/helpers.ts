@@ -8,6 +8,7 @@
 
 import _ from 'lodash';
 import BigNumber from 'bignumber.js';
+import fetch from 'node-fetch';
 import { retry } from 'ts-retry-promise';
 import { PosOptions } from './model';
 
