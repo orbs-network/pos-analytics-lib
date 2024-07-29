@@ -72,3 +72,57 @@ export function optionsStartFromText(options: PosOptions, currentBlockNumber: nu
   if (options.read_from_block === 0 || options.read_from_block === -1) return 'Earliest Possible';
   return options.read_from_block < 0 ? currentBlockNumber+options.read_from_block : options.read_from_block;
 }
+
+const SUBGRAPH_URL = 'https://gateway-arbitrum.network.thegraph.com/api/dbf5a15c333968e364b8763b83f05da3/subgraphs/id/W7M8fwkGYRL5SWHEkxiRcErPb5Ht46YUyPLzzktvKeo';
+
+export async function querySubgraph(query: string, variables: any) {
+  const PAGE_SIZE = 100;
+  let allResults: any[] = [];
+  let hasMore = true;
+  let skip = 0;
+
+  // Extract the query name from the query string
+  const queryName = query.match(/query\s*\([^)]*\)\s*{\s*(\w+)/)?.[1];
+  if (!queryName) {
+    throw new Error('Unable to extract query name from the query string');
+  }
+
+  while (hasMore) {
+    const paginatedQuery = query.replace(
+        `${queryName}(`,
+        `${queryName}(first: ${PAGE_SIZE}, skip: ${skip},`
+    );
+
+    const response = await fetch(SUBGRAPH_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: paginatedQuery,
+        variables,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const { data, errors } = await response.json();
+
+    if (errors) {
+      throw new Error(`GraphQL errors: ${JSON.stringify(errors)}`);
+    }
+
+    const results = data[queryName];
+    allResults = allResults.concat(results);
+
+    if (results.length < PAGE_SIZE) {
+      hasMore = false;
+    } else {
+      skip += PAGE_SIZE;
+    }
+  }
+
+  return allResults;
+}
