@@ -142,48 +142,84 @@ export async function getGuardianStakeAndDelegationChanges(address: string, ethS
     const delegateActions: GuardianAction[] = [];
     events.sort(ascendingEvents);
     const chainId = await web3.eth.getChainId();
-    for (let event of events) {
-        const delegatorAddress = event.returnValues.delegator.toLowerCase();
-        if (delegatorAddress !== address) {
-            const d = {
-                last_change_block: event.blockNumber,
-                last_change_time: 0,
-                address: delegatorAddress,
-                stake: bigToNumber(new BigNumber(event.returnValues.delegatorContributedStake)),
-                non_stake: 0,
+
+    // handling delegation events: for polygon - use subgraph, for eth - get events from contract like before
+    if (chainId === 137) {
+        for (let event of events) {
+            const delegatorAddress = event.returnValues.delegator.toLowerCase();
+            if (delegatorAddress !== address) {
+                const d = {
+                    last_change_block: event.blockNumber,
+                    last_change_time: 0,
+                    address: delegatorAddress,
+                    stake: bigToNumber(new BigNumber(event.returnValues.delegatorContributedStake)),
+                    non_stake: 0,
+                }
+                delegatorMap[delegatorAddress] = d;
             }
-            delegatorMap[delegatorAddress] = d;
-        }
-        const selfDelegate = new BigNumber(event.returnValues.selfDelegatedStake);
-        const allStake = new BigNumber(event.returnValues.delegatedStake);
+            const selfDelegate = new BigNumber(event.returnValues.selfDelegatedStake);
+            const allStake = new BigNumber(event.returnValues.delegatedStake);
 
-        addOrUpdateStakeList(delegationStakes, event.blockNumber, bigToNumber(selfDelegate), bigToNumber(allStake.minus(selfDelegate)), _.size(delegatorMap), chainId, refBlock);
-    }
+            addOrUpdateStakeList(delegationStakes, event.blockNumber, bigToNumber(selfDelegate), bigToNumber(allStake.minus(selfDelegate)), _.size(delegatorMap), chainId, refBlock);
+        }
 
-    const delegatedQuery = `
-    query ($address: Bytes!) {
-        delegateds(where: { to: $address }, orderBy: blockNumber, orderDirection: asc) {
-            id
-            from
-            to
-            blockNumber
-            blockTimestamp
-            transactionHash
+        const delegatedQuery = `
+            query ($address: Bytes!) {
+                delegateds(where: { to: $address }, orderBy: blockNumber, orderDirection: asc) {
+                    id
+                    from
+                    to
+                    blockNumber
+                    blockTimestamp
+                    transactionHash
+                }
+            }
+            `;
+        const delegatedEvents = await querySubgraph(delegatedQuery, {address: address.toLowerCase()});
+        for (let event of delegatedEvents) {
+            const toAddress = event.to.toLowerCase();
+            delegateActions.push({
+                contract: Contracts.Delegate.toLowerCase(),
+                event: toAddress === address.toLowerCase() ? 'SelfDelegated' : 'Delegated',
+                block_time: Number(event.blockTimestamp),
+                block_number: Number(event.blockNumber),
+                tx_hash: event.transactionHash,
+                additional_info_link: generateTxLink(event.transactionHash, chainId),
+                to: toAddress,
+            });
         }
     }
-    `;
-    const delegatedEvents = await querySubgraph(delegatedQuery, { address: address.toLowerCase() });
-    for (let event of delegatedEvents) {
-        const toAddress = event.to.toLowerCase();
-        delegateActions.push({
-            contract: Contracts.Delegate.toLowerCase(),
-            event: toAddress === address.toLowerCase() ? 'SelfDelegated' : 'Delegated',
-            block_time: Number(event.blockTimestamp),
-            block_number: Number(event.blockNumber),
-            tx_hash: event.transactionHash,
-            additional_info_link: generateTxLink(event.transactionHash, chainId),
-            to: toAddress,
-        });
+    else { // eth
+        for (let event of events) {
+            if (event.signature === Topics.DelegateStakeChanged) {
+                const delegatorAddress = event.returnValues.delegator.toLowerCase();
+                if (delegatorAddress !== address) {
+                    const d = {
+                        last_change_block: event.blockNumber,
+                        last_change_time: 0,
+                        address: delegatorAddress,
+                        stake: bigToNumber(new BigNumber(event.returnValues.delegatorContributedStake)),
+                        non_stake: 0,
+                    }
+                    delegatorMap[delegatorAddress] = d;
+                }
+                const selfDelegate = new BigNumber(event.returnValues.selfDelegatedStake);
+                const allStake = new BigNumber(event.returnValues.delegatedStake);
+
+                addOrUpdateStakeList(delegationStakes, event.blockNumber, bigToNumber(selfDelegate), bigToNumber(allStake.minus(selfDelegate)), _.size(delegatorMap), chainId, refBlock);
+            } else if (event.signature === Topics.Delegated) {
+                const toAddress = String(event.returnValues.to).toLowerCase();
+                delegateActions.push({
+                    contract: event.address.toLowerCase(),
+                    event: toAddress === address.toLowerCase() ? 'SelfDelegated' : event.event,
+                    block_time: getBlockEstimatedTime(event.blockNumber, chainId, refBlock),
+                    block_number: event.blockNumber,
+                    tx_hash: event.transactionHash,
+                    additional_info_link: generateTxLink(event.transactionHash, chainId),
+                    to: toAddress,
+                });
+            }
+        }
     }
 
     delegationStakes.push(generateStakeAction(ethState.block.number, ethState.block.time, 
