@@ -152,7 +152,7 @@ export function getBlockEstimatedTime(blockNumber: number, chainId: number = 1, 
 
 export function getStartOfPosBlock(chainId: number = 1): BlockInfo {
     const blocksMap: {[chainId: string]: {time: number, number: number}} = {
-        1: {time: 1586328645, number: 9830000 },
+        1: {time: 1646207643, number: 14306338 },
         137: {time: 1646207643, number: 25487295 }
     }
     return blocksMap[chainId];
