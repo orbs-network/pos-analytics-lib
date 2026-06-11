@@ -75,8 +75,8 @@ export function optionsStartFromText(options: PosOptions, currentBlockNumber: nu
 
 export async function querySubgraph(chainId: number, query: string, variables: any) {
   const SUBGRAPH_URL = chainId === 137
-      ? 'https://gateway-arbitrum.network.thegraph.com/api/dbf5a15c333968e364b8763b83f05da3/subgraphs/id/W7M8fwkGYRL5SWHEkxiRcErPb5Ht46YUyPLzzktvKeo'
-      : 'https://gateway-arbitrum.network.thegraph.com/api/dbf5a15c333968e364b8763b83f05da3/subgraphs/id/EaGnQx56wdcXch5YHQ2ar4UjdKs4gqYPkKTUFtEWyij5'
+      ? 'https://hub.orbs.network/delegationsSubgraphPolygon'
+      : 'https://hub.orbs.network/delegationsSubgraphEth'
   const PAGE_SIZE = 100;
   let allResults: any[] = [];
   let hasMore = true;
