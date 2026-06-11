@@ -9,7 +9,7 @@
 import _ from 'lodash';
 import BigNumber from 'bignumber.js';
 import { fetchJson, bigToNumber, parseOptions, optionsStartFromText, querySubgraph} from './helpers';
-import { addressToTopic, ascendingEvents, Contracts, getBlockEstimatedTime, generateTxLink, getWeb3, readBalances, readContractEvents, readGuardianDataFromState, Topics, getStartOfRewardsBlock, getStartOfPosBlock, getStartOfDelegationBlock, getQueryRewardsBlock, getQueryPosBlock } from "./eth-helpers";
+import { addressToTopic, appendItems, ascendingEvents, Contracts, getBlockEstimatedTime, generateTxLink, getWeb3, readBalances, readContractEvents, readGuardianDataFromState, Topics, getStartOfRewardsBlock, getStartOfPosBlock, getStartOfDelegationBlock, getQueryRewardsBlock, getQueryPosBlock } from "./eth-helpers";
 import { Guardian, GuardianInfo, GuardianDelegator, GuardianReward, GuardianStake, GuardianAction, DelegatorReward, PosOptions } from './model';
 import { getGuardianRewardsStakingInternal, getRewardsClaimActions } from './rewards';
 
@@ -72,26 +72,26 @@ export async function getGuardian(address: string, ethereumEndpoint: string | an
         const txs: Promise<any>[] = [
             getGuardianStakeAndDelegationChanges(address, ethData, web3, refBlock).then(res => {
                 delegatorMap = res.delegatorMap;
-                actions.push(...res.delegateActions);
-                stakes.push(...res.delegationStakes);                        
+                appendItems(actions, res.delegateActions);
+                appendItems(stakes, res.delegationStakes);                        
             }),
             getGuardianStakeActions(address, ethData, web3, options, refBlock).then(res => {
-                actions.push(...res.stakeActions);
-                stakes.push(...res.stakesBeforeDelegation);
+                appendItems(actions, res.stakeActions);
+                appendItems(stakes, res.stakesBeforeDelegation);
             }),
-            getGuardianRegisterationActions(address, ethData, web3, options, refBlock).then(res => {actions.push(...res);}),
+            getGuardianRegisterationActions(address, ethData, web3, options, refBlock).then(res => {appendItems(actions, res);}),
             getGuardianFeeAndBootstrap(address, ethData, web3, options, refBlock).then(res => {
-                actions.push(...res.withdrawActions);
+                appendItems(actions, res.withdrawActions);
                 bootstrapRewards = res.bootstraps;
                 feeRewards = res.fees;
             })
         ];
 
         if(options.read_rewards_disable) {
-            txs.push(getRewardsClaimActions(address, ethData, web3, options, true).then(res => actions.push(...res.claimActions)));
+            txs.push(getRewardsClaimActions(address, ethData, web3, options, true).then(res => appendItems(actions, res.claimActions)));
         } else {
             txs.push(getGuardianRewardsStakingInternal(address, ethData, web3, options).then(res =>{
-                actions.push(...res.claimActions);
+                appendItems(actions, res.claimActions);
                 rewardsAsGuardian = res.rewardsAsGuardian;
                 rewardsAsDelegator = res.rewardsAsDelegator;
             }));

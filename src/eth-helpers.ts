@@ -501,16 +501,22 @@ export function addressToTopic(address:string) {
     return '0x000000000000000000000000' + address.substr(2).toLowerCase();
 }
 
+export function appendItems<T>(target: T[], items: T[]) {
+    for (const item of items) {
+        target.push(item);
+    }
+}
+
 export async function readContractEvents(filter: (string[] | string | undefined)[], contractsType:Contracts, web3:Web3, fromBlock?:number, toBlock:number|string = 'latest') {
     if (!fromBlock) {
         const chainId = await web3.eth.getChainId();
         fromBlock = getStartOfPosBlock(chainId).number;
     }
     const contracts = getPosContracts(web3, contractsType);
-    const allEvents = [];
+    const allEvents: any[] = [];
     for(const contract of contracts) {
         const events = await readEvents(filter, contract, web3, fromBlock, toBlock, maxPace);
-        allEvents.push(...events);
+        appendItems(allEvents, events);
     }
     return allEvents;
 }
@@ -534,7 +540,7 @@ export async function readEvents(filter: (string[] | string | undefined)[], cont
         const results:any = [];
         for(let i = startBlock; i < endBlock; i+=pace) {
             const currentEnd = i+pace > endBlock ? endBlock : i+pace;
-            results.push(...await readEvents(filter, contract, web3, i, currentEnd, pace));
+            appendItems(results, await readEvents(filter, contract, web3, i, currentEnd, pace));
             pace = maxPace;
         }
         console.log('\x1b[36m%s\x1b[0m', `read events slowing down ended`);

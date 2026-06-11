@@ -9,7 +9,7 @@
 import _ from 'lodash';
 import BigNumber from "bignumber.js";
 import { bigToNumber, optionsStartFromText, parseOptions } from './helpers';
-import { addressToTopic, ascendingEvents, Contracts, generateTxLink, getBlockEstimatedTime, getQueryDelegationBlock, getQueryPosBlock, getStartOfPosBlock, getWeb3, getWeb3Polygon, readContractEvents, readDelegatorDataFromState, Topics } from "./eth-helpers";
+import { addressToTopic, appendItems, ascendingEvents, Contracts, generateTxLink, getBlockEstimatedTime, getQueryDelegationBlock, getQueryPosBlock, getStartOfPosBlock, getWeb3, getWeb3Polygon, readContractEvents, readDelegatorDataFromState, Topics } from "./eth-helpers";
 import { DelegatorInfo, DelegatorAction, DelegatorReward, DelegatorStake, PosOptions } from "./model";
 import { getDelegatorRewardsStakingInternal, getRewardsClaimActions } from './rewards';
 
@@ -25,15 +25,15 @@ export async function getDelegator(address: string, ethereumEndpoint: string | a
         const txs: Promise<any>[] = [
             getStakeActions(address, ethData, web3, options, refBlock).then(res => {
                 stakes = res.stakes;
-                actions.push(...res.stakeActions);
+                appendItems(actions, res.stakeActions);
             }),
-            getDelegateActions(address, ethData, web3, options, refBlock).then(res => {actions.push(...res.delegateActions)}),
+            getDelegateActions(address, ethData, web3, options, refBlock).then(res => {appendItems(actions, res.delegateActions)}),
         ];
         if(options.read_rewards_disable) {
-            txs.push(getRewardsClaimActions(address, ethData, web3, options, false, refBlock).then(res => actions.push(...res.claimActions)));
+            txs.push(getRewardsClaimActions(address, ethData, web3, options, false, refBlock).then(res => appendItems(actions, res.claimActions)));
         } else {
             txs.push(getDelegatorRewardsStakingInternal(address, ethData, web3, options, refBlock).then(res =>{
-                actions.push(...res.claimActions);
+                appendItems(actions, res.claimActions);
                 rewards = res.rewards;
             }));
         }

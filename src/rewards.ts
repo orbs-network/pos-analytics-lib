@@ -9,7 +9,7 @@
 import _ from 'lodash';
 import BigNumber from 'bignumber.js';
 import { bigToNumber, parseOptions } from './helpers';
-import { addressToTopic, ascendingEvents, descendingEvents, Contracts, descendingBlockNumbers, generateTxLink, getBlockEstimatedTime, getQueryRewardsBlock, getStartOfRewardsBlock, getWeb3, readContractEvents, readDelegatorDataFromState, readGuardianDataFromState, Topics } from "./eth-helpers";
+import { addressToTopic, appendItems, ascendingEvents, descendingEvents, Contracts, descendingBlockNumbers, generateTxLink, getBlockEstimatedTime, getQueryRewardsBlock, getStartOfRewardsBlock, getWeb3, readContractEvents, readDelegatorDataFromState, readGuardianDataFromState, Topics } from "./eth-helpers";
 import { Action, DelegatorReward, GuardianReward, PosOptions} from './model';
 
 export async function getGuardianStakingRewards(address: string, ethereumEndpoint: string | any, options?: PosOptions | any): Promise<{rewardsAsGuardian: GuardianReward[];rewardsAsDelegator: DelegatorReward[];claimActions: Action[];}> {
@@ -162,7 +162,7 @@ async function generateAllDelegatorGuardiansEvents(guardians:DelegatorGuardianTr
     
     const allGuardiansEvents: any[] = [];
     for (const list of res) {
-        allGuardiansEvents.push(...list);
+        appendItems(allGuardiansEvents, list);
     }
 
     uniqueBlockEvents(allGuardiansEvents);
