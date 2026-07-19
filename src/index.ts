@@ -12,5 +12,6 @@ export { getAllDelegators, getOverview } from "./overview";
 export { getDelegatorStakingRewards, getGuardianStakingRewards } from "./rewards";
 export { allDelegatorsToXlsx, delegatorToXlsx, guardianToXlsx } from './xls'
 export { getStartOfDelegationBlock, getStartOfPosBlock, getStartOfRewardsBlock, getWeb3, getWeb3Polygon } from "./eth-helpers";
+export { configureEventCache } from "./event-cache";
 
 export * from "./model";

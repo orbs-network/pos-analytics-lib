@@ -20,6 +20,7 @@ import { rewardsAbi } from './abis/rewards';
 import { feeBootstrapRewardAbi } from './abis/feebootstrap';
 import { bigToNumber, DECIMALS, getIpFromHex } from './helpers';
 import { registryAbi } from './abis/registry';
+import { eventCacheGet, eventCacheKey, eventCacheSet, getEventCacheReorgMargin, isEventCacheEnabled } from './event-cache';
 
 export enum Topics {
     Staked = '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
@@ -65,6 +66,20 @@ interface ContractValidData {
 interface ContractsData {[key:string]: ContractValidData[]};
 
 const maxPace = 4000000;
+// chunk size used when a provider rejects a full-range eth_getLogs request.
+// Polygon providers commonly cap the allowed block range (e.g. Infura: 10,000 blocks),
+// so the old strategy of shrinking 10% at a time from 4M needed ~57 failing round-trips
+// before the first successful read. Callers can override per provider by setting
+// web3.getLogsPace (e.g. Object.assign(web3, {getLogsPace: 50000})).
+const fallbackPace: {[chainId: number]: number} = {
+    1: maxPace,
+    137: 10000
+};
+const chunkConcurrency = 10;
+
+function getLogsPace(web3: any, chainId: number): number {
+    return web3.getLogsPace || fallbackPace[chainId] || maxPace;
+}
 
 export async function getWeb3(ethereumEndpoint: string, readContracts:boolean = true) {
    const web3 = new Web3(new Web3.providers.HttpProvider(ethereumEndpoint, {keepAlive: true,}));
@@ -120,7 +135,7 @@ async function readContractsAddresses(contractsData: ContractsData, web3:any) {
 
     do {
         const currentRegContract = new web3.eth.Contract(contractsData[Contracts.Registry][0].abi, currentRegAddress);
-        const res = await readRegisteryEvents(contractsData, currentRegContract, currentStartBlock);
+        const res = await readRegisteryEvents(contractsData, currentRegContract, currentStartBlock, web3);
         currentRegAddress = res.nextRegContract;
         currentStartBlock = res.nextRegStartBlock;
         // we don't update the registry as this is one time use only (at the moment)
@@ -508,50 +523,97 @@ export function appendItems<T>(target: T[], items: T[]) {
 }
 
 export async function readContractEvents(filter: (string[] | string | undefined)[], contractsType:Contracts, web3:Web3, fromBlock?:number, toBlock:number|string = 'latest') {
+    const chainId = await web3.eth.getChainId();
     if (!fromBlock) {
-        const chainId = await web3.eth.getChainId();
         fromBlock = getStartOfPosBlock(chainId).number;
     }
     const contracts = getPosContracts(web3, contractsType);
     const allEvents: any[] = [];
     for(const contract of contracts) {
-        const events = await readEvents(filter, contract, web3, fromBlock, toBlock, maxPace);
+        const events = await readEventsWithCache(filter, contract, web3, chainId, fromBlock, toBlock, getLogsPace(web3, chainId));
         appendItems(allEvents, events);
     }
     return allEvents;
 }
 
+// Incremental-cache wrapper around readEvents: history that was already synced is served
+// from the cache and only the tail is fetched, re-reading the last reorgMargin blocks in
+// case the tip moved. With the cache disabled this is exactly a readEvents call.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function readEventsWithCache(filter: (string[] | string | undefined)[], contract:any, web3:any, chainId: number, fromBlock: number, toBlock: number | string, pace: number) {
+    if (!isEventCacheEnabled()) {
+        return readEvents(filter, contract, web3, fromBlock, toBlock, pace);
+    }
+    const toBlockNumber = typeof toBlock === 'string' ? (await getCurrentBlockInfo(web3)).number : toBlock;
+    const key = eventCacheKey(chainId, contract.options.address, filter, fromBlock);
+    const cached = await eventCacheGet(key);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let events: any[] = [];
+    let fetchFrom = fromBlock;
+    if (cached && cached.syncedToBlock >= fromBlock) {
+        fetchFrom = Math.max(fromBlock, cached.syncedToBlock - getEventCacheReorgMargin() + 1);
+        events = cached.events.filter((e:any) => e.blockNumber < fetchFrom);
+    }
+    if (fetchFrom <= toBlockNumber) {
+        const fresh = await readEvents(filter, contract, web3, fetchFrom, toBlockNumber, pace);
+        events = events.concat(fresh);
+        await eventCacheSet(key, { syncedToBlock: toBlockNumber, events });
+    }
+    return events.filter((e:any) => e.blockNumber >= fromBlock && e.blockNumber <= toBlockNumber);
+}
+
+// Tries the full range in a single request first (one round-trip on capable providers);
+// if the provider rejects it, falls back to chunked reads of `pace` blocks.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function readEvents(filter: (string[] | string | undefined)[], contract:any, web3:any, startBlock: number, endBlock: number | string, pace: number) {
     try {
         let options = {topics: filter, fromBlock: startBlock, toBlock: endBlock};
         return await contract.getPastEvents('allEvents', options);
     } catch (e) {
-        pace = Math.round(pace*0.9);
-        if (pace <= 100) {
-            throw new Error(`looking for events slowed down below ${pace} - fail`)
-        }
         if (typeof endBlock === 'string') {
             const block = await getCurrentBlockInfo(web3);
             endBlock = block.number;
         }
-        console.log('\x1b[36m%s\x1b[0m', `read events slowing down to ${pace}`);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const results:any = [];
-        for(let i = startBlock; i < endBlock; i+=pace) {
-            const currentEnd = i+pace > endBlock ? endBlock : i+pace;
-            appendItems(results, await readEvents(filter, contract, web3, i, currentEnd, pace));
-            pace = maxPace;
-        }
-        console.log('\x1b[36m%s\x1b[0m', `read events slowing down ended`);
-        return results;
+        console.log('\x1b[36m%s\x1b[0m', `read events falling back to chunks of ${pace} blocks`);
+        return await readEventsChunked(filter, contract, web3, startBlock, endBlock, pace);
     }
 }
 
-async function readRegisteryEvents(contractsData:ContractsData, regContract:any, startBlock:number) {
-    let options = {fromBlock: startBlock, toBlock: 'latest'};
-    const events = await regContract.getPastEvents('allEvents', options);
-    events.sort(ascendingEvents); 
+// Reads events in fixed-size chunks, chunkConcurrency requests at a time.
+// A chunk the provider still rejects is retried at half the pace (for that subrange only),
+// so the pace converges in a few steps and is never reset back up mid-scan.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function readEventsChunked(filter: (string[] | string | undefined)[], contract:any, web3:any, startBlock: number, endBlock: number, pace: number): Promise<any[]> {
+    if (pace <= 100) {
+        throw new Error(`looking for events slowed down below ${pace} - fail`)
+    }
+    const ranges: {from: number, to: number}[] = [];
+    for (let i = startBlock; i <= endBlock; i += pace) {
+        ranges.push({from: i, to: Math.min(i + pace - 1, endBlock)});
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results: any[] = [];
+    for (let b = 0; b < ranges.length; b += chunkConcurrency) {
+        const batch = ranges.slice(b, b + chunkConcurrency);
+        const batchResults = await Promise.all(batch.map(async ({from, to}) => {
+            try {
+                return await contract.getPastEvents('allEvents', {topics: filter, fromBlock: from, toBlock: to});
+            } catch (e) {
+                return readEventsChunked(filter, contract, web3, from, to, Math.round(pace / 2));
+            }
+        }));
+        for (const events of batchResults) {
+            appendItems(results, events);
+        }
+    }
+    return results;
+}
+
+async function readRegisteryEvents(contractsData:ContractsData, regContract:any, startBlock:number, web3:any) {
+    const chainId = await web3.eth.getChainId();
+    const events = await readEvents([], regContract, web3, startBlock, 'latest', getLogsPace(web3, chainId));
+    events.sort(ascendingEvents);
     for (let event of events) {
         if (event.event === 'ContractAddressUpdated') {
             const contractName = event.returnValues.contractName;
