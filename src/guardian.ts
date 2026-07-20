@@ -8,9 +8,10 @@
 
 import _ from 'lodash';
 import BigNumber from 'bignumber.js';
-import { fetchJson, bigToNumber, parseOptions, optionsStartFromText, querySubgraph} from './helpers';
+import { fetchJson, bigToNumber, parseOptions, optionsStartFromText } from './helpers';
 import { addressToTopic, appendItems, ascendingEvents, Contracts, getBlockEstimatedTime, generateTxLink, getWeb3, readBalances, readContractEvents, readGuardianDataFromState, Topics, getStartOfRewardsBlock, getStartOfPosBlock, getStartOfDelegationBlock, getQueryRewardsBlock, getQueryPosBlock } from "./eth-helpers";
 import { Guardian, GuardianInfo, GuardianDelegator, GuardianReward, GuardianStake, GuardianAction, DelegatorReward, PosOptions } from './model';
+import { readSubgraphStream, specForTopic } from './subgraph-events';
 import { getGuardianRewardsStakingInternal, getRewardsClaimActions } from './rewards';
 
 export async function getGuardiansCert(networkNodeUrls: string[]) {
@@ -162,21 +163,15 @@ export async function getGuardianStakeAndDelegationChanges(address: string, ethS
         addOrUpdateStakeList(delegationStakes, event.blockNumber, bigToNumber(selfDelegate), bigToNumber(allStake.minus(selfDelegate)), _.size(delegatorMap), chainId, refBlock);
     }
 
-    const delegatedQuery = `
-        query ($address: Bytes!) {
-            delegateds(where: { to: $address }, orderBy: blockNumber, orderDirection: asc) {
-                id
-                from
-                to
-                blockNumber
-                blockTimestamp
-                transactionHash
-            }
-        }
-        `;
-    const delegatedEvents = await querySubgraph(chainId, delegatedQuery, {address: address.toLowerCase()});
+    // all Delegated events targeting this guardian ('to' overrides the default filter
+    // field, which for Delegated is the first indexed input 'from')
+    const delegatedEvents = await readSubgraphStream(chainId, specForTopic(Topics.Delegated), {
+        fromBlock: 0,
+        address: address.toLowerCase(),
+        addressFieldOverride: 'to'
+    });
     for (let event of delegatedEvents) {
-        const toAddress = event.to.toLowerCase();
+        const toAddress = String(event.to).toLowerCase();
         delegateActions.push({
             contract: Contracts.Delegate.toLowerCase(),
             event: toAddress === address.toLowerCase() ? 'SelfDelegated' : 'Delegated',

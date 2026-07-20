@@ -20,6 +20,7 @@ import { rewardsAbi } from './abis/rewards';
 import { feeBootstrapRewardAbi } from './abis/feebootstrap';
 import { bigToNumber, DECIMALS, getIpFromHex } from './helpers';
 import { registryAbi } from './abis/registry';
+import { readSubgraphStream, rowToEvent, specForTopic, specsForContract } from './subgraph-events';
 
 export enum Topics {
     Staked = '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
@@ -507,17 +508,35 @@ export function appendItems<T>(target: T[], items: T[]) {
     }
 }
 
+// Event history is served by the orbs-pos-analytics subgraphs instead of eth_getLogs
+// chain scans (Polygon history alone is ~65M blocks; providers cap getLogs ranges).
+// The filter keeps its web3 topics shape: filter[0] is the event topic(s) (undefined
+// means every event stream of this contract), filter[1] is an address topic matching
+// the event's first indexed input. Synthesized results are shaped like getPastEvents
+// output, so all aggregation code is unchanged.
 export async function readContractEvents(filter: (string[] | string | undefined)[], contractsType:Contracts, web3:Web3, fromBlock?:number, toBlock:number|string = 'latest') {
+    const chainId = await web3.eth.getChainId();
     if (!fromBlock) {
-        const chainId = await web3.eth.getChainId();
         fromBlock = getStartOfPosBlock(chainId).number;
     }
-    const contracts = getPosContracts(web3, contractsType);
+    const toBlockNumber = typeof toBlock === 'string' ? undefined : toBlock;
+
+    const eventTopics = filter && filter.length && filter[0] !== undefined && filter[0] !== null
+        ? (Array.isArray(filter[0]) ? filter[0] : [filter[0]])
+        : undefined;
+    const specList = eventTopics ? eventTopics.map(t => specForTopic(String(t))) : specsForContract(contractsType);
+    const addressTopic = filter && filter.length > 1 && filter[1] ? String(filter[1]) : undefined;
+    const address = addressTopic ? '0x' + addressTopic.slice(addressTopic.length - 40) : undefined;
+
+    const contractAddress = getLatestPosContract(web3, contractsType).options.address;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allEvents: any[] = [];
-    for(const contract of contracts) {
-        const events = await readEvents(filter, contract, web3, fromBlock, toBlock, maxPace);
-        appendItems(allEvents, events);
-    }
+    await Promise.all(specList.map(async (spec) => {
+        const rows = await readSubgraphStream(chainId, spec, { fromBlock: fromBlock!, toBlock: toBlockNumber, address });
+        for (const row of rows) {
+            allEvents.push(rowToEvent(row, spec, contractAddress));
+        }
+    }));
     return allEvents;
 }
 
