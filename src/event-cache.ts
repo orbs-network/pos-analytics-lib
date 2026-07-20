@@ -79,6 +79,23 @@ export async function eventCacheGet(key: string): Promise<EventCacheEntry | unde
     return undefined;
 }
 
+// Strips event objects down to the fields the aggregation code actually reads (plus
+// raw.topics, needed to filter by address locally). Roughly halves storage size.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function compactEvents(events: any[]): any[] {
+    return events.map((e: any) => ({
+        address: e.address,
+        blockNumber: e.blockNumber,
+        transactionIndex: e.transactionIndex,
+        logIndex: e.logIndex,
+        transactionHash: e.transactionHash,
+        event: e.event,
+        signature: e.signature,
+        returnValues: e.returnValues,
+        raw: { topics: (e.raw && e.raw.topics) || [] }
+    }));
+}
+
 export async function eventCacheSet(key: string, entry: EventCacheEntry) {
     if (!isEventCacheEnabled()) return;
     try {

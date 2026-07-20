@@ -20,7 +20,8 @@ import { rewardsAbi } from './abis/rewards';
 import { feeBootstrapRewardAbi } from './abis/feebootstrap';
 import { bigToNumber, DECIMALS, getIpFromHex } from './helpers';
 import { registryAbi } from './abis/registry';
-import { eventCacheGet, eventCacheKey, eventCacheSet, getEventCacheReorgMargin, isEventCacheEnabled } from './event-cache';
+import { compactEvents, eventCacheGet, eventCacheKey, eventCacheSet, getEventCacheReorgMargin, isEventCacheEnabled } from './event-cache';
+import { progressChunkDone, progressScanEnd, progressScanStart } from './read-progress';
 
 export enum Topics {
     Staked = '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
@@ -85,6 +86,7 @@ export async function getWeb3(ethereumEndpoint: string, readContracts:boolean = 
     web3.eth.transactionConfirmationBlocks = 1; // to stop web3 from polling pending tx
 
     if (getLogsPace) Object.assign(web3, {getLogsPace});
+    Object.assign(web3, {progressChainId: 1});
     Object.assign(web3, {'multicallContractAddress': '0xeefBa1e63905eF1D7ACbA5a8513c70307C1cE441'});
     const contractsData: ContractsData = {};
     contractsData[Contracts.Delegate] = [];
@@ -110,6 +112,7 @@ export async function getWeb3Polygon(ethereumEndpoint: string, readContracts:boo
     web3.eth.transactionConfirmationBlocks = 1; // to stop web3 from polling pending tx
 
     if (getLogsPace) Object.assign(web3, {getLogsPace});
+    Object.assign(web3, {progressChainId: 137});
     Object.assign(web3, {'multicallContractAddress': '0x11ce4B23bD875D7F5C6a31084f55fDe1e9A87507'});
     const contractsData: ContractsData = {};
     contractsData[Contracts.Delegate] = [];
@@ -526,13 +529,37 @@ export async function readContractEvents(filter: (string[] | string | undefined)
     if (!fromBlock) {
         fromBlock = getStartOfPosBlock(chainId).number;
     }
+    // Split the filter: the network is queried by event type only (topic position 0);
+    // the remaining topic positions (guardian/delegator address) are matched locally.
+    // The same scan and cache entry then serve every address instead of one scan per
+    // guardian - the comparison is identical to what the provider would have done.
+    const networkFilter = [filter && filter.length ? filter[0] : undefined];
+    const localTopics = filter ? filter.slice(1) : [];
     const contracts = getPosContracts(web3, contractsType);
     const allEvents: any[] = [];
     for(const contract of contracts) {
-        const events = await readEventsWithCache(filter, contract, web3, chainId, fromBlock, toBlock);
-        appendItems(allEvents, events);
+        const events = await readEventsWithCache(networkFilter, contract, web3, chainId, fromBlock, toBlock);
+        appendItems(allEvents, filterEventsByTopics(events, localTopics));
     }
     return allEvents;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function topicMatches(expected: string[] | string | undefined, actual: string | undefined): boolean {
+    if (expected === undefined || expected === null) return true;
+    if (Array.isArray(expected)) return expected.some(t => String(t).toLowerCase() === String(actual).toLowerCase());
+    return String(expected).toLowerCase() === String(actual).toLowerCase();
+}
+
+// Applies eth_getLogs topic semantics locally: localTopics[i] must match the event's raw
+// topic at position i+1 (position 0, the event signature, stays in the network filter).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function filterEventsByTopics(events: any[], localTopics: (string[] | string | undefined)[]): any[] {
+    if (!localTopics.length || localTopics.every(t => t === undefined || t === null)) return events;
+    return events.filter((e:any) => {
+        const topics = (e.raw && e.raw.topics) || [];
+        return localTopics.every((expected, i) => topicMatches(expected, topics[i + 1]));
+    });
 }
 
 // Incremental-cache wrapper around readEvents: history that was already synced is served
@@ -556,7 +583,7 @@ async function readEventsWithCache(filter: (string[] | string | undefined)[], co
     }
     if (fetchFrom <= toBlockNumber) {
         const fresh = await readEvents(filter, contract, web3, fetchFrom, toBlockNumber);
-        events = events.concat(fresh);
+        events = events.concat(compactEvents(fresh));
         await eventCacheSet(key, { syncedToBlock: toBlockNumber, events });
     }
     return events.filter((e:any) => e.blockNumber >= fromBlock && e.blockNumber <= toBlockNumber);
@@ -601,7 +628,13 @@ export async function readEvents(filter: (string[] | string | undefined)[], cont
         }
         console.log('\x1b[36m%s\x1b[0m', `read events falling back to chunks of ${chunkPace} blocks`);
         if (from <= endBlock) {
-            appendItems(events, await readEventsChunked(filter, contract, web3, from, endBlock, chunkPace));
+            const progressChain = web3.progressChainId || 0;
+            progressScanStart(progressChain, endBlock - from + 1);
+            try {
+                appendItems(events, await readEventsChunked(filter, contract, web3, from, endBlock, chunkPace));
+            } finally {
+                progressScanEnd(progressChain);
+            }
         }
         return events;
     }
@@ -625,7 +658,9 @@ async function readEventsChunked(filter: (string[] | string | undefined)[], cont
         const batch = ranges.slice(b, b + chunkConcurrency);
         const batchResults = await Promise.all(batch.map(async ({from, to}) => {
             try {
-                return await contract.getPastEvents('allEvents', {topics: filter, fromBlock: from, toBlock: to});
+                const events = await contract.getPastEvents('allEvents', {topics: filter, fromBlock: from, toBlock: to});
+                progressChunkDone(web3.progressChainId || 0, to - from + 1);
+                return events;
             } catch (e) {
                 return readEventsChunked(filter, contract, web3, from, to, Math.round(pace / 2));
             }
@@ -638,7 +673,6 @@ async function readEventsChunked(filter: (string[] | string | undefined)[], cont
 }
 
 async function readRegisteryEvents(contractsData:ContractsData, regContract:any, startBlock:number, web3:any) {
-    const chainId = await web3.eth.getChainId();
     const events = await readEvents([], regContract, web3, startBlock, 'latest');
     events.sort(ascendingEvents);
     for (let event of events) {
