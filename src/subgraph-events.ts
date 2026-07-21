@@ -13,6 +13,7 @@
 
 import Web3 from 'web3';
 import { retry } from 'ts-retry-promise';
+import { getStreamCacheReorgMargin, isStreamCacheEnabled, streamCacheGet, streamCacheKey, streamCacheSet } from './stream-cache';
 import { stakeAbi } from './abis/stake';
 import { delegationAbi } from './abis/delegation';
 import { rewardsAbi } from './abis/rewards';
@@ -130,6 +131,7 @@ export function specsForContract(contract: string): EventSpec[] {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function postQuery(endpoint: string, query: string): Promise<any> {
+    // exponential backoff - the Studio dev endpoint rate-limits bursts with HTTP 429
     return retry(async () => {
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -140,7 +142,7 @@ async function postQuery(endpoint: string, query: string): Promise<any> {
         const { data, errors } = await response.json();
         if (errors) throw new Error(`subgraph errors: ${JSON.stringify(errors).slice(0, 300)}`);
         return data;
-    }, { retries: 3, delay: 300 });
+    }, { retries: 6, delay: 500, backoff: 'EXPONENTIAL', maxBackOff: 10000 });
 }
 
 export interface StreamQuery {
@@ -189,11 +191,44 @@ async function readStreamRange(endpoint: string, spec: EventSpec, addressField: 
     return out;
 }
 
-// Reads one event stream. The block range is split into partitions paginated in
-// parallel - big streams (Polygon StakingRewardsAllocated: 150k+ rows) would otherwise
-// pay one sequential round-trip per 1000 rows.
+// Reads one event stream, incrementally cached: already-synced rows come from the
+// stream cache (memory/IndexedDB) and only the tail since the last sync is fetched,
+// re-reading the last reorgMargin blocks for safety. With the cache disabled this is
+// a plain full read.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function readSubgraphStream(chainId: number, spec: EventSpec, q: StreamQuery): Promise<any[]> {
+    if (!isStreamCacheEnabled()) {
+        return readSubgraphStreamLive(chainId, spec, q);
+    }
+    const addressField = q.addressFieldOverride || spec.addressField;
+    const head = await subgraphHeadBlock(chainId);
+    const limit = q.toBlock !== undefined ? Math.min(q.toBlock, head) : head;
+    if (limit < q.fromBlock) return [];
+    const key = streamCacheKey(chainId, spec.plural, addressField, q.address, q.fromBlock);
+    const cached = await streamCacheGet(key);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let rows: any[] = [];
+    let fetchFrom = q.fromBlock;
+    if (cached && cached.syncedToBlock >= q.fromBlock) {
+        fetchFrom = Math.max(q.fromBlock, cached.syncedToBlock - getStreamCacheReorgMargin() + 1);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        rows = cached.rows.filter((r: any) => Number(r.blockNumber) < fetchFrom);
+    }
+    if (fetchFrom <= limit) {
+        const fresh = await readSubgraphStreamLive(chainId, spec, Object.assign({}, q, { fromBlock: fetchFrom, toBlock: limit }));
+        rows = rows.concat(fresh);
+        await streamCacheSet(key, { syncedToBlock: limit, rows });
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return rows.filter((r: any) => Number(r.blockNumber) >= q.fromBlock && Number(r.blockNumber) <= limit);
+}
+
+// Uncached read. The block range is split into partitions paginated in parallel - big
+// streams (Polygon StakingRewardsAllocated: 150k+ rows) would otherwise pay one
+// sequential round-trip per 1000 rows.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function readSubgraphStreamLive(chainId: number, spec: EventSpec, q: StreamQuery): Promise<any[]> {
     const endpoint = getSubgraphEndpoint(chainId);
     const addressField = q.addressFieldOverride || spec.addressField;
     const toBlock = q.toBlock !== undefined ? q.toBlock : await subgraphHeadBlock(chainId);
