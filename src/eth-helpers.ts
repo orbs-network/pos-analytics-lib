@@ -20,6 +20,7 @@ import { rewardsAbi } from './abis/rewards';
 import { feeBootstrapRewardAbi } from './abis/feebootstrap';
 import { bigToNumber, DECIMALS, getIpFromHex } from './helpers';
 import { registryAbi } from './abis/registry';
+import { createEtherscanConfig, readEtherscanEvents } from './etherscan';
 
 export enum Topics {
     Staked = '0x1449c6dd7851abc30abf37f57715f492010519147cc2652fbc38202c18a6ee90',
@@ -90,8 +91,12 @@ export async function getWeb3(ethereumEndpoint: string, readContracts:boolean = 
     return web3;
 }
 
-export async function getWeb3Polygon(ethereumEndpoint: string, readContracts:boolean = true) {
+// useEtherscan - read events through the Etherscan API (needs etherscanApiKey) instead of eth_getLogs, which polygon providers limit to 10K blocks
+export async function getWeb3Polygon(ethereumEndpoint: string, readContracts:boolean = true, useEtherscan:boolean = false, etherscanApiKey:string = '') {
     const web3 = new Web3(new Web3.providers.HttpProvider(ethereumEndpoint, {keepAlive: true,}));
+    if (useEtherscan) {
+        Object.assign(web3, {etherscan: createEtherscanConfig(etherscanApiKey, 137)});
+    }
     web3.eth.transactionBlockTimeout = 0; // to stop web3 from polling pending tx
     web3.eth.transactionPollingTimeout = 0; // to stop web3 from polling pending tx
     web3.eth.transactionConfirmationBlocks = 1; // to stop web3 from polling pending tx
@@ -120,7 +125,7 @@ async function readContractsAddresses(contractsData: ContractsData, web3:any) {
 
     do {
         const currentRegContract = new web3.eth.Contract(contractsData[Contracts.Registry][0].abi, currentRegAddress);
-        const res = await readRegisteryEvents(contractsData, currentRegContract, currentStartBlock);
+        const res = await readRegisteryEvents(contractsData, currentRegContract, currentStartBlock, web3);
         currentRegAddress = res.nextRegContract;
         currentStartBlock = res.nextRegStartBlock;
         // we don't update the registry as this is one time use only (at the moment)
@@ -523,6 +528,9 @@ export async function readContractEvents(filter: (string[] | string | undefined)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function readEvents(filter: (string[] | string | undefined)[], contract:any, web3:any, startBlock: number, endBlock: number | string, pace: number) {
+    if (web3.etherscan) {
+        return readEtherscanEvents(web3.etherscan, filter, contract, web3, startBlock, endBlock);
+    }
     try {
         let options = {topics: filter, fromBlock: startBlock, toBlock: endBlock};
         return await contract.getPastEvents('allEvents', options);
@@ -548,9 +556,11 @@ export async function readEvents(filter: (string[] | string | undefined)[], cont
     }
 }
 
-async function readRegisteryEvents(contractsData:ContractsData, regContract:any, startBlock:number) {
+async function readRegisteryEvents(contractsData:ContractsData, regContract:any, startBlock:number, web3:any) {
     let options = {fromBlock: startBlock, toBlock: 'latest'};
-    const events = await regContract.getPastEvents('allEvents', options);
+    const events = web3.etherscan
+        ? await readEtherscanEvents(web3.etherscan, [], regContract, web3, startBlock, 'latest')
+        : await regContract.getPastEvents('allEvents', options);
     events.sort(ascendingEvents); 
     for (let event of events) {
         if (event.event === 'ContractAddressUpdated') {
